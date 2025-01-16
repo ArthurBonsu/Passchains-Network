@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, PropsWithChildren } from 'react';
 import Web3 from 'web3';
 import { Contract } from 'web3-eth-contract';
-import { loadContracts } from '../utils/contract-loader';
+import { loadContracts, PasschainContract } from '../utils/contract-loader';
+import { Logger } from '../utils/logger';
 
 interface BlockchainContextType {
   web3: Web3 | null;
@@ -10,7 +11,16 @@ interface BlockchainContextType {
     [key: string]: Contract;
   };
   connect: () => Promise<void>;
-  processTransaction: (data: any) => Promise<any>;
+  processTransaction: (data: any) => Promise<TransactionResult>;
+  isLoading: boolean;
+}
+
+interface TransactionResult {
+  parsedMetadata: string;
+  speculativeTx: string;
+  zkProof: string;
+  clusterProcessing: string;
+  relayCrossChain: string;
 }
 
 const BlockchainContext = createContext<BlockchainContextType>({
@@ -18,37 +28,87 @@ const BlockchainContext = createContext<BlockchainContextType>({
   accounts: [],
   contracts: {},
   connect: async () => {},
-  processTransaction: async () => {}
+  processTransaction: async () => {
+    throw new Error('BlockchainContext not initialized');
+  },
+  isLoading: false
 });
 
-export const BlockchainProvider: React.FC<PropsWithChildren<{}>> = ({ children }) => {
+export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const [web3, setWeb3] = useState<Web3 | null>(null);
   const [accounts, setAccounts] = useState<string[]>([]);
-  const [contracts, setContracts] = useState<{[key: string]: Contract}>({});
-
-  const connect = async () => {
-    if ((window as any).ethereum) {
-      const web3Instance = new Web3((window as any).ethereum);
-      try {
-        await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-        
-        const accs = await web3Instance.eth.getAccounts();
-        setAccounts(accs);
-        setWeb3(web3Instance);
-
-        const loadedContracts = loadContracts(web3Instance);
-        setContracts(loadedContracts);
-      } catch (error) {
-        console.error("User denied account access", error);
+  const [contracts, setContracts] = useState<{[key: string]: PasschainContract}>({});  // Changed type here
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+ 
+  const loadBlockchainContracts = async (web3Instance: Web3): Promise<void> => {
+    try {
+      setIsLoading(true);
+      const loadedContracts = await loadContracts(web3Instance);
+      
+      // Verify each contract was loaded correctly
+      for (const [name, contract] of Object.entries(loadedContracts)) {
+        if (!contract || !contract.methods) {
+          throw new Error(`Failed to load contract: ${name}`);
+        }
       }
-    } else {
-      console.log('Non-Ethereum browser detected. Consider trying MetaMask!');
+      
+      setContracts(loadedContracts);  // Now this should work with the correct types
+    } catch (error) {
+      Logger.error('Failed to load contracts', error);
+      throw new Error('Contract loading failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const processTransaction = async (data: any) => {
+  const connect = async (): Promise<void> => {
+    Logger.info('Attempting to connect blockchain');
+    setIsLoading(true);
+    
+    const ethereum = (window as any).ethereum;
+    if (!ethereum) {
+      setIsLoading(false);
+      Logger.warn('Non-Ethereum browser detected. Consider trying MetaMask!');
+      throw new Error('Ethereum provider not found');
+    }
+
+    try {
+      const web3Instance = new Web3(ethereum);
+      await ethereum.request({ method: 'eth_requestAccounts' });
+      
+      const accs = await web3Instance.eth.getAccounts();
+      if (accs.length === 0) {
+        throw new Error('No accounts found');
+      }
+
+      setAccounts(accs);
+      setWeb3(web3Instance);
+
+      // Load contracts after web3 is initialized
+      await loadBlockchainContracts(web3Instance);
+
+      Logger.info('Blockchain connected successfully', { accounts: accs });
+    } catch (error) {
+      Logger.error('Connection error', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const processTransaction = async (data: any): Promise<TransactionResult> => {
+    if (isLoading) {
+      throw new Error('Blockchain is still initializing');
+    }
+
+    Logger.info('Processing transaction', data);
+
     if (!web3 || accounts.length === 0) {
       await connect();
+    }
+
+    if (!web3 || accounts.length === 0) {
+      throw new Error('Blockchain connection not established');
     }
 
     try {
@@ -60,40 +120,46 @@ export const BlockchainProvider: React.FC<PropsWithChildren<{}>> = ({ children }
         RelayChain 
       } = contracts;
 
-      // Step 1: Parse Metadata
+      if (!MetadataParser || !PacechainChannel || !ZKPVerifierBase || 
+          !ClusterManager || !RelayChain) {
+        throw new Error('Required contracts not initialized');
+      }
+
+      const encodedData = web3.utils.fromAscii(JSON.stringify(data));
+      const defaultOptions = { from: accounts[0] };
+
       const parsedMetadata = await MetadataParser.methods
-        .parseMetadata(web3.utils.fromAscii(JSON.stringify(data)))
-        .send({ from: accounts[0] });
+        .parseMetadata(encodedData)
+        .send(defaultOptions);
 
-      // Step 2: Initiate Speculative Transaction
       const speculativeTx = await PacechainChannel.methods
-        .initiateSpeculativeTransaction(web3.utils.fromAscii(JSON.stringify(data)))
-        .send({ from: accounts[0] });
+        .initiateSpeculativeTransaction(encodedData)
+        .send(defaultOptions);
 
-      // Step 3: Generate ZK Proof
       const zkProof = await ZKPVerifierBase.methods
-        .generateProof(web3.utils.fromAscii(JSON.stringify(data)), web3.utils.fromAscii('witness'))
-        .send({ from: accounts[0] });
+        .generateProof(encodedData, web3.utils.fromAscii('witness'))
+        .send(defaultOptions);
 
-      // Step 4: Cluster Processing
       const clusterProcessing = await ClusterManager.methods
-        .processTransaction(web3.utils.fromAscii(JSON.stringify(data)))
-        .send({ from: accounts[0] });
+        .processTransaction(encodedData)
+        .send(defaultOptions);
 
-      // Step 5: Relay to Cross-Chain Network
       const relayCrossChain = await RelayChain.methods
-        .relayTransaction(web3.utils.fromAscii(JSON.stringify(data)))
-        .send({ from: accounts[0] });
+        .relayTransaction(encodedData)
+        .send(defaultOptions);
 
-      return {
+      const result: TransactionResult = {
         parsedMetadata: parsedMetadata.transactionHash,
         speculativeTx: speculativeTx.transactionHash,
         zkProof: zkProof.transactionHash,
         clusterProcessing: clusterProcessing.transactionHash,
         relayCrossChain: relayCrossChain.transactionHash
       };
+
+      Logger.info('Transaction processed successfully', result);
+      return result;
     } catch (error) {
-      console.error('Transaction processing error', error);
+      Logger.error('Transaction processing error', error);
       throw error;
     }
   };
@@ -104,7 +170,8 @@ export const BlockchainProvider: React.FC<PropsWithChildren<{}>> = ({ children }
       accounts, 
       contracts, 
       connect, 
-      processTransaction 
+      processTransaction,
+      isLoading 
     }}>
       {children}
     </BlockchainContext.Provider>

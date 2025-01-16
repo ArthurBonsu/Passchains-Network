@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useBlockchain } from '../components/BlockchainContext';
+import { Logger } from '../utils/logger';
 
 const TransactionForm: React.FC = () => {
   const { web3, accounts, connect, processTransaction } = useBlockchain();
@@ -15,17 +16,28 @@ const TransactionForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    Logger.info('Transaction form submitted', { formData });
+
     if (!web3 || accounts.length === 0) {
-      await connect();
-      return;
+      try {
+        await connect();
+        Logger.info('Wallet connected');
+      } catch (connectError) {
+        Logger.error('Wallet connection failed', connectError);
+        setError('Failed to connect wallet');
+        return;
+      }
     }
 
     try {
       setError(null);
       const transactionResult = await processTransaction(formData);
       setResult(transactionResult);
+      Logger.info('Transaction processed successfully', { transactionResult });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      Logger.error('Transaction processing error', { error: errorMessage });
+      setError(errorMessage);
     }
   };
 
@@ -77,7 +89,11 @@ const TransactionForm: React.FC = () => {
         </button>
       </form>
 
-      {error && <div style={{ color: 'red' }}>{error}</div>}
+      {error && (
+        <div style={{ color: 'red' }}>
+          {error}
+        </div>
+      )}
       
       {result && (
         <div>

@@ -50,6 +50,7 @@
 │       └── ZKPVerifierBase.json
 ├── components/
 │   ├── BlockchainContext.tsx
+│   ├── GlobalErrorHandler.tsx
 │   ├── PerformanceMetrics.tsx
 │   └── TransactionForm.tsx
 ├── config/
@@ -81,26 +82,38 @@
 │   ├── 5_initial_migration.js
 │   ├── 6_initial_migration.js
 │   └── 7_initial_migration.js
-├── pages/
-│   ├── index.tsx
-│   └── transactions/
-│       └── index.tsx
-├── scripts/
-│   ├── deploy_ethereum.js
-│   ├── deploy_polkadot.js
-│   └── measure_performance.js
-├── services/
-│   ├── blockchain-service.ts
-│   ├── contract-interactions.ts
-│   └── transaction-processor.ts
-├── test/
-│   ├── blockchain_registry_test.js
-│   ├── passchain_flow_test.js
-│   └── relay_chain_test.js
-└── utils/
-    ├── contract-loader.ts
-    ├── performance-tracker.ts
-    └── web3-config.ts
+├───pages
+│   │   index.tsx
+│   │   _app.tsx
+│   │
+│   └───transactions
+│           index.tsx
+│
+├───passchain
+│       .gitattributes
+│       LICENSE
+│
+├───scripts
+│       deploy_ethereum.js
+│       deploy_polkadot.js
+│       measure_performance.js
+│
+├───services
+│       blockchain-service.ts
+│       contract-interactions.ts
+│       transaction-processor.ts
+│
+├───test
+│       blockchain_registry_test.js
+│       passchain_flow_test.js
+│       relay_chain_test.js
+│
+└───utils
+        contract-loader.ts
+        logger.ts
+        performance-tracker.ts
+        web3-config.ts
+.eslintrc.json
 deployment-script.js
 global.d.ts
 next-env.d.ts

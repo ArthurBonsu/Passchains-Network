@@ -1,11 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { PerformanceTracker } from '../utils/performance-tracker';
+import { Logger } from '../utils/logger';
 
 interface PerformanceMetricsProps {
   performanceData: ReturnType<PerformanceTracker['getPerformanceMetrics']>;
 }
 
 const PerformanceMetrics: React.FC<PerformanceMetricsProps> = ({ performanceData }) => {
+  // Log component initialization
+  React.useEffect(() => {
+    Logger.info('PerformanceMetrics component initialized', {
+      totalExecutionTime: performanceData.totalExecutionTime,
+      memoryUsed: performanceData.finalMemoryUsed
+    });
+  }, [performanceData]);
+
   return (
     <div className="performance-metrics">
       <h2>Performance Metrics</h2>
