@@ -2,18 +2,17 @@
 const nextConfig = {
   reactStrictMode: true,
   
-  // Improve build performance
+  // Build optimization
   swcMinify: true,
   optimizeFonts: true,
-  
-  // Source map and debugging options
-  productionBrowserSourceMaps: false, // Changed to false for better performance
+  productionBrowserSourceMaps: false,
 
-  // Improved logging and error reporting
+  // TypeScript configuration
   typescript: {
-    ignoreBuildErrors: false, // Show all TypeScript errors
+    ignoreBuildErrors: false,
   },
 
+  // Webpack configuration
   webpack: (config, { isServer }) => {
     // Optimize source mapping
     config.devtool = isServer ? false : 'cheap-source-map';
@@ -63,40 +62,8 @@ const nextConfig = {
     // Reduce build noise
     config.stats = 'minimal';
 
-    return config;
-  },
-
-  // Experimental performance improvements
-  experimental: {
-    optimizePackageImports: ['react', 'react-dom', 'next'],
-    optimisticClientCache: true,
-    // Disable server components for now
-    serverComponents: false,
-  },
-
-  // Performance monitoring
-  onDemandEntries: {
-    maxInactiveAge: 30 * 1000, // Reduced from 60 to 30 seconds
-    pagesBufferLength: 2, // Reduced from 5 to 2
-  },
-
-  // Image optimization
-  images: {
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
-    domains: [], // Add allowed image domains if needed
-    formats: ['image/avif', 'image/webp'],
-  },
-
-  // Compiler options
-  compiler: {
-    removeConsole: process.env.NODE_ENV === 'production',
-    reactRemoveProperties: process.env.NODE_ENV === 'production',
-  },
-
-  // Bundle analyzer configuration
-  ...(process.env.ANALYZE && {
-    webpack: (config, { isServer }) => {
+    // Bundle analyzer configuration
+    if (process.env.ANALYZE) {
       const { BundleAnalyzerPlugin } = require('@next/bundle-analyzer');
       config.plugins.push(
         new BundleAnalyzerPlugin({
@@ -105,9 +72,36 @@ const nextConfig = {
           openAnalyzer: true,
         })
       );
-      return config;
-    },
-  }),
+    }
+
+    return config;
+  },
+
+  // Experimental features
+  experimental: {
+    optimizePackageImports: ['react', 'react-dom', 'next'],
+    optimisticClientCache: true,
+  },
+
+  // Performance monitoring
+  onDemandEntries: {
+    maxInactiveAge: 30 * 1000,
+    pagesBufferLength: 2,
+  },
+
+  // Image optimization
+  images: {
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    domains: [],
+    formats: ['image/avif', 'image/webp'],
+  },
+
+  // Compiler options for production
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production',
+    reactRemoveProperties: process.env.NODE_ENV === 'production',
+  },
 };
 
 module.exports = nextConfig;
