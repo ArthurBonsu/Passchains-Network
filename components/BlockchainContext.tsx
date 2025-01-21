@@ -3,6 +3,7 @@ import Web3 from 'web3';
 import { Contract } from 'web3-eth-contract';
 import { loadContracts, PasschainContract } from '../utils/contract-loader';
 import { Logger } from '../utils/logger';
+import { useTransactions } from '../contexts/TransactionContext';
 
 // First fix: Create a union type that encompasses both Contract and PasschainContract
 type ContractType = Contract | PasschainContract;
@@ -41,10 +42,13 @@ const BlockchainContext = createContext<BlockchainContextType>({
 export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const [web3, setWeb3] = useState<Web3 | null>(null);
   const [accounts, setAccounts] = useState<string[]>([]);
-  // Update the state type to match our context type
   const [contracts, setContracts] = useState<{[key: string]: ContractType}>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isClient, setIsClient] = useState(false);
+  const [isContractInitialized, setIsContractInitialized] = useState(false);
+
+  // This is the crucial part - we need to use the transactions context
+  const { addTransaction } = useTransactions();
  
   const loadBlockchainContracts = async (web3Instance: Web3): Promise<void> => {
     try {
@@ -52,15 +56,25 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
       const loadedContracts = await loadContracts(web3Instance);
       
       // Verify each contract was loaded correctly
+      const verifiedContracts: {[key: string]: ContractType} = {};
       for (const [name, contract] of Object.entries(loadedContracts)) {
         if (!contract || !contract.methods) {
-          throw new Error(`Failed to load contract: ${name}`);
+          Logger.warn(`Contract ${name} failed to load correctly`);
+          continue;
         }
+        verifiedContracts[name] = contract;
+      }
+
+      if (Object.keys(verifiedContracts).length === 0) {
+        throw new Error('No contracts could be loaded');
       }
       
-      setContracts(loadedContracts);  // Now this should work with the correct types
+      setContracts(verifiedContracts);
+      setIsContractInitialized(true);
+      Logger.info('Contracts loaded successfully', { contracts: Object.keys(verifiedContracts) });
     } catch (error) {
       Logger.error('Failed to load contracts', error);
+      setIsContractInitialized(false);
       throw new Error('Contract loading failed');
     } finally {
       setIsLoading(false);
@@ -106,7 +120,7 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
   };
 
   const processTransaction = async (data: any): Promise<TransactionResult> => {
-    // Ensure client-side execution
+    // Ensure client-side execution and contract initialization
     if (!isClient) {
       throw new Error('Transaction processing is client-side only');
     }
@@ -115,15 +129,19 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
       throw new Error('Blockchain is still initializing');
     }
 
-    Logger.info('Processing transaction', data);
-
-    if (!web3 || accounts.length === 0) {
-      await connect();
+    // Check if contracts are initialized
+    if (!isContractInitialized) {
+      await connect(); // This will load contracts
     }
+
+    // Track start time for performance measurement
+    const startTime = performance.now();
 
     if (!web3 || accounts.length === 0) {
       throw new Error('Blockchain connection not established');
     }
+
+    Logger.info('Processing transaction', data);
 
     try {
       const { 
@@ -134,6 +152,7 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         RelayChain 
       } = contracts;
 
+      // Ensure all required contracts are present
       if (!MetadataParser || !PacechainChannel || !ZKPVerifierBase || 
           !ClusterManager || !RelayChain) {
         throw new Error('Required contracts not initialized');
@@ -169,6 +188,17 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         clusterProcessing: clusterProcessing.transactionHash,
         relayCrossChain: relayCrossChain.transactionHash
       };
+
+      // Calculate processing time
+      const endTime = performance.now();
+      const processingTime = endTime - startTime;
+
+      // Add transaction to context
+      addTransaction({
+        ...data,
+        blockchainResults: result,
+        processingTime
+      });
 
       Logger.info('Transaction processed successfully', result);
       return result;

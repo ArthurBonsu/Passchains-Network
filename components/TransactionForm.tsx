@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useBlockchain } from '../components/BlockchainContext';
+import { useTransactions } from '@/contexts/TransactionContext';
 import { Logger } from '../utils/logger';
 
 const TransactionForm: React.FC = () => {
   const { web3, accounts, connect, processTransaction } = useBlockchain();
+  const { addTransaction } = useTransactions();
   const [isClient, setIsClient] = useState(false);
   const [formData, setFormData] = useState({
     city: '',
@@ -27,6 +29,8 @@ const TransactionForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    const startTime = performance.now();
+    
     Logger.info('Transaction form submitted', { formData });
 
     if (!web3 || accounts.length === 0) {
@@ -43,8 +47,21 @@ const TransactionForm: React.FC = () => {
     try {
       setError(null);
       const transactionResult = await processTransaction(formData);
+      const endTime = performance.now();
+      
+      // Manually add transaction if not handled in processTransaction
+      addTransaction({
+        ...formData,
+        blockchainResults: transactionResult,
+        processingTime: endTime - startTime,
+        timestamp: Date.now()
+      });
+
       setResult(transactionResult);
-      Logger.info('Transaction processed successfully', { transactionResult });
+      Logger.info('Transaction processed successfully', { 
+        transactionResult,
+        processingTime: endTime - startTime 
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
       Logger.error('Transaction processing error', { error: errorMessage });
@@ -61,55 +78,68 @@ const TransactionForm: React.FC = () => {
   };
 
   return (
-    <div>
-      <form onSubmit={handleSubmit}>
-        <input 
-          type="text" 
-          name="city" 
-          placeholder="City" 
-          value={formData.city}
-          onChange={handleChange}
-          required 
-        />
-        <input 
-          type="date" 
-          name="date" 
-          value={formData.date}
-          onChange={handleChange}
-          required 
-        />
-        <input 
-          type="text" 
-          name="sector" 
-          placeholder="Sector" 
-          value={formData.sector}
-          onChange={handleChange}
-          required 
-        />
-        <input 
-          type="number" 
-          name="ktCO2" 
-          placeholder="ktCO2" 
-          value={formData.ktCO2}
-          onChange={handleChange}
-          step="0.00000001"
-          required 
-        />
-        <button type="submit">
+    <div className="transaction-form">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <input 
+            type="text" 
+            name="city" 
+            placeholder="City" 
+            value={formData.city}
+            onChange={handleChange}
+            className="w-full p-2 border rounded"
+            required 
+          />
+          <input 
+            type="date" 
+            name="date" 
+            value={formData.date}
+            onChange={handleChange}
+            className="w-full p-2 border rounded"
+            required 
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <input 
+            type="text" 
+            name="sector" 
+            placeholder="Sector" 
+            value={formData.sector}
+            onChange={handleChange}
+            className="w-full p-2 border rounded"
+            required 
+          />
+          <input 
+            type="number" 
+            name="ktCO2" 
+            placeholder="ktCO2" 
+            value={formData.ktCO2}
+            onChange={handleChange}
+            step="0.00000001"
+            className="w-full p-2 border rounded"
+            required 
+          />
+        </div>
+        <button 
+          type="submit"
+          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition"
+        >
           {accounts.length > 0 ? 'Process Transaction' : 'Connect Wallet'}
         </button>
       </form>
 
       {error && (
-        <div style={{ color: 'red' }}>
+        <div className="mt-4 p-2 bg-red-100 text-red-700 rounded">
           {error}
         </div>
       )}
       
       {result && (
-        <div>
-          <h2>Transaction Results</h2>
-          <pre>{JSON.stringify(result, null, 2)}</pre>
+        <div className="mt-4 p-4 bg-green-50 rounded">
+          <h2 className="text-xl font-semibold mb-2">Transaction Results</h2>
+          <pre className="overflow-x-auto bg-gray-100 p-2 rounded">
+            {JSON.stringify(result, null, 2)}
+          </pre>
         </div>
       )}
     </div>
