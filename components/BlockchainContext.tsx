@@ -5,13 +5,20 @@ import { loadContracts, PasschainContract } from '../utils/contract-loader';
 import { Logger } from '../utils/logger';
 import { useTransactions } from '../contexts/TransactionContext';
 
-// First fix: Create a union type that encompasses both Contract and PasschainContract
-type ContractType = Contract | PasschainContract;
+// Updated type definition to handle different contract types
+type ContractType = (Contract & { 
+  options?: { 
+    address?: string 
+  }; 
+}) | (PasschainContract & {
+  options?: { 
+    address?: string 
+  };
+});
 
 interface BlockchainContextType {
   web3: Web3 | null;
   accounts: string[];
-  // Update the contracts type to use our new union type
   contracts: {
     [key: string]: ContractType;
   };
@@ -47,9 +54,25 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
   const [isClient, setIsClient] = useState(false);
   const [isContractInitialized, setIsContractInitialized] = useState(false);
 
-  // This is the crucial part - we need to use the transactions context
+  // Use transactions context
   const { addTransaction } = useTransactions();
  
+  // Type-safe contract address retrieval
+  const getContractAddress = (contract: ContractType): string => {
+    // Check for address property
+    if ('address' in contract && contract.address) {
+      return contract.address;
+    }
+    
+    // Check for address in options
+    if ('options' in contract && contract.options?.address) {
+      return contract.options.address;
+    }
+    
+    // Fallback if no address found
+    return 'Address not found';
+  };
+
   const loadBlockchainContracts = async (web3Instance: Web3): Promise<void> => {
     try {
       setIsLoading(true);
@@ -71,7 +94,15 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
       
       setContracts(verifiedContracts);
       setIsContractInitialized(true);
-      Logger.info('Contracts loaded successfully', { contracts: Object.keys(verifiedContracts) });
+      Logger.info('Contracts loaded successfully', { 
+        contracts: Object.keys(verifiedContracts),
+        contractAddresses: Object.fromEntries(
+          Object.entries(verifiedContracts).map(([name, contract]) => [
+            name, 
+            getContractAddress(contract)
+          ])
+        )
+      });
     } catch (error) {
       Logger.error('Failed to load contracts', error);
       setIsContractInitialized(false);
@@ -84,38 +115,43 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
   const connect = async (): Promise<void> => {
     // Ensure this only runs on the client
     if (!isClient) return;
-
+  
     Logger.info('Attempting to connect blockchain');
-    setIsLoading(true);
     
-    const ethereum = (window as any).ethereum;
-    if (!ethereum) {
-      setIsLoading(false);
-      Logger.warn('Non-Ethereum browser detected. Consider trying MetaMask!');
-      throw new Error('Ethereum provider not found');
-    }
-
     try {
-      const web3Instance = new Web3(ethereum);
+      // Check for ethereum provider
+      const ethereum = (window as any).ethereum;
+      if (!ethereum) {
+        Logger.warn('Ethereum provider not found');
+        throw new Error('Non-Ethereum browser detected. Consider trying MetaMask!');
+      }
+  
+      // Request account access
       await ethereum.request({ method: 'eth_requestAccounts' });
       
+      // Create Web3 instance
+      const web3Instance = new Web3(ethereum);
+      
+      // Get accounts
       const accs = await web3Instance.eth.getAccounts();
       if (accs.length === 0) {
         throw new Error('No accounts found');
       }
-
-      setAccounts(accs);
+  
+      // Update state
       setWeb3(web3Instance);
-
-      // Load contracts after web3 is initialized
+      setAccounts(accs);
+  
+      // Load contracts
       await loadBlockchainContracts(web3Instance);
-
-      Logger.info('Blockchain connected successfully', { accounts: accs });
+  
+      Logger.info('Blockchain connected successfully', { 
+        accounts: accs,
+        contractsLoaded: Object.keys(contracts).length
+      });
     } catch (error) {
-      Logger.error('Connection error', error);
+      Logger.error('Blockchain connection failed', error);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -124,63 +160,101 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
     if (!isClient) {
       throw new Error('Transaction processing is client-side only');
     }
-
+  
     if (isLoading) {
       throw new Error('Blockchain is still initializing');
     }
-
-    // Check if contracts are initialized
-    if (!isContractInitialized) {
-      await connect(); // This will load contracts
-    }
-
+  
     // Track start time for performance measurement
     const startTime = performance.now();
-
-    if (!web3 || accounts.length === 0) {
-      throw new Error('Blockchain connection not established');
-    }
-
-    Logger.info('Processing transaction', data);
-
+  
+    // Attempt to connect if not already connected
     try {
+      // If no web3 or accounts, attempt to connect
+      if (!web3 || accounts.length === 0) {
+        await connect();
+      }
+  
+      // Recheck after connection attempt
+      if (!web3 || accounts.length === 0) {
+        throw new Error('Failed to establish blockchain connection');
+      }
+  
+      // Check if contracts are initialized
+      if (!isContractInitialized) {
+        await loadBlockchainContracts(web3);
+      }
+  
+      // More comprehensive contract validation
+      const requiredContracts = [
+        'MetadataParser', 
+        'PacechainChannel', 
+        'TransactionValidator', 
+        'ZKPVerifierBase', 
+        'ClusterManager', 
+        'TransactionRelay'
+      ];
+  
+      const missingContracts = requiredContracts.filter(
+        contractName => !contracts[contractName]
+      );
+  
+      if (missingContracts.length > 0) {
+        Logger.error('Missing contracts', {
+          missingContracts,
+          availableContracts: Object.keys(contracts)
+        });
+        throw new Error(`Missing required contracts: ${missingContracts.join(', ')}`);
+      }
+  
+      // Detailed logging of available contracts
+      requiredContracts.forEach(contractName => {
+        const contract = contracts[contractName];
+        Logger.info(`Contract ${contractName} details`, {
+          address: getContractAddress(contract),
+          availableMethods: contract.methods ? Object.keys(contract.methods) : 'No methods'
+        });
+      });
+  
+      Logger.info('Processing transaction', data);
+  
       const { 
         MetadataParser, 
         PacechainChannel, 
         ZKPVerifierBase, 
         ClusterManager, 
-        RelayChain 
+        TransactionRelay 
       } = contracts;
-
+  
       // Ensure all required contracts are present
       if (!MetadataParser || !PacechainChannel || !ZKPVerifierBase || 
-          !ClusterManager || !RelayChain) {
+          !ClusterManager || !TransactionRelay) {
         throw new Error('Required contracts not initialized');
       }
-
+  
       const encodedData = web3.utils.fromAscii(JSON.stringify(data));
       const defaultOptions = { from: accounts[0] };
-
+  
       const parsedMetadata = await MetadataParser.methods
         .parseMetadata(encodedData)
         .send(defaultOptions);
-
+  
       const speculativeTx = await PacechainChannel.methods
         .initiateSpeculativeTransaction(encodedData)
         .send(defaultOptions);
-
+  
       const zkProof = await ZKPVerifierBase.methods
         .generateProof(encodedData, web3.utils.fromAscii('witness'))
         .send(defaultOptions);
-
+  
       const clusterProcessing = await ClusterManager.methods
         .processTransaction(encodedData)
         .send(defaultOptions);
-
-      const relayCrossChain = await RelayChain.methods
+  
+      const relayCrossChain = await TransactionRelay.methods
         .relayTransaction(encodedData)
         .send(defaultOptions);
-
+  
       const result: TransactionResult = {
         parsedMetadata: parsedMetadata.transactionHash,
         speculativeTx: speculativeTx.transactionHash,
@@ -188,22 +262,31 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         clusterProcessing: clusterProcessing.transactionHash,
         relayCrossChain: relayCrossChain.transactionHash
       };
-
+  
       // Calculate processing time
       const endTime = performance.now();
       const processingTime = endTime - startTime;
-
+  
       // Add transaction to context
       addTransaction({
         ...data,
         blockchainResults: result,
         processingTime
       });
-
+  
       Logger.info('Transaction processed successfully', result);
       return result;
     } catch (error) {
       Logger.error('Transaction processing error', error);
+      
+      // Additional diagnostic logging
+      Logger.info('Connection status', {
+        isClient,
+        web3Exists: !!web3,
+        accountsCount: accounts.length,
+        contractsInitialized: isContractInitialized
+      });
+  
       throw error;
     }
   };

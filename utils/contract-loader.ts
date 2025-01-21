@@ -1,6 +1,6 @@
 import Web3 from 'web3';
 import { Contract as Web3Contract } from 'web3-eth-contract';
-
+import contractConfig from '../config/contract_addresses.json';
 
 
 // Create a type that matches Web3 Contract structure more closely
