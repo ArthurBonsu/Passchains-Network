@@ -18,21 +18,17 @@ const TransactionList: React.FC = () => {
       }
 
       try {
-        setLoading(true);
-        // Placeholder: Adjust based on your actual contract method
         const txCount = await contracts.RelayChain.methods.getTransactionCount().call();
-        
         const txList = await Promise.all(
           Array.from({length: Number(txCount)}, (_, i) => 
             contracts.RelayChain.methods.getTransaction(i).call()
           )
         );
-
         setBlockchainTransactions(txList);
-        setLoading(false);
       } catch (error) {
         console.error('Failed to fetch blockchain transactions', error);
         setError('Failed to load blockchain transactions');
+      } finally {
         setLoading(false);
       }
     };

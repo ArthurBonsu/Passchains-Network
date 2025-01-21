@@ -1,11 +1,35 @@
 import React, { createContext, useContext, useState, PropsWithChildren, useEffect } from 'react';
+
 import Web3 from 'web3';
 import { Contract } from 'web3-eth-contract';
 import { loadContracts, PasschainContract } from '../utils/contract-loader';
 import { Logger } from '../utils/logger';
 import { useTransactions } from '../contexts/TransactionContext';
+import { BlockchainService } from '../services/blockchain-service'; // Add this import
+import networkConfig from '../config/network_config'; // 
 
 // Updated type definition to handle different contract types
+
+// Add NetworkSwitchOptions interface
+interface NetworkSwitchOptions {
+  chainId?: number;
+  networkName?: string;
+}
+
+// Update BlockchainContextType to include new properties
+interface BlockchainContextType {
+  web3: Web3 | null;
+  accounts: string[];
+  contracts: {
+    [key: string]: ContractType;
+  };
+  connect: () => Promise<void>;
+  processTransaction: (data: any) => Promise<TransactionResult>;
+  switchNetwork?: (options: NetworkSwitchOptions) => Promise<void>; // Optional network switching
+  blockchainService?: BlockchainService | null; // Optional blockchain service
+  isLoading: boolean;
+}
+
 type ContractType = (Contract & { 
   options?: { 
     address?: string 
@@ -16,16 +40,6 @@ type ContractType = (Contract & {
   };
 });
 
-interface BlockchainContextType {
-  web3: Web3 | null;
-  accounts: string[];
-  contracts: {
-    [key: string]: ContractType;
-  };
-  connect: () => Promise<void>;
-  processTransaction: (data: any) => Promise<TransactionResult>;
-  isLoading: boolean;
-}
 
 interface TransactionResult {
   parsedMetadata: string;
@@ -53,10 +67,67 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isClient, setIsClient] = useState(false);
   const [isContractInitialized, setIsContractInitialized] = useState(false);
+  
+  // Add blockchain service state
+  const [blockchainService, setBlockchainService] = useState<BlockchainService | undefined>(undefined);
 
   // Use transactions context
   const { addTransaction } = useTransactions();
+
  
+  const connect = async (): Promise<void> => {
+    if (!isClient) return;
+    Logger.info('Attempting to connect blockchain');
+    
+    try {
+      const ethereum = (window as any).ethereum;
+      if (!ethereum) {
+        Logger.warn('Ethereum provider not found');
+        throw new Error('Non-Ethereum browser detected. Consider trying MetaMask!');
+      }
+      await ethereum.request({ method: 'eth_requestAccounts' });
+      
+      const web3Instance = new Web3(ethereum);
+      
+      const accs = await web3Instance.eth.getAccounts();
+      if (accs.length === 0) {
+        throw new Error('No accounts found');
+      }
+      setWeb3(web3Instance);
+      setAccounts(accs);
+      const loadedContracts = await loadBlockchainContracts(web3Instance);
+      const service = new BlockchainService(web3Instance, loadedContracts);
+      setBlockchainService(service);
+      Logger.info('Blockchain connected successfully', { 
+        accounts: accs,
+        contractsLoaded: Object.keys(loadedContracts).length
+      });
+    } catch (error) {
+      Logger.error('Blockchain connection failed', error);
+      throw error;
+    }
+  };
+
+  // Network switching method
+  const switchNetwork = async (options: NetworkSwitchOptions): Promise<void> => {
+    if (!blockchainService) {
+      throw new Error('Blockchain service not initialized');
+    }
+    
+    try {
+      await blockchainService.switchNetwork(options);
+      
+      // Optional: Reconnect or refresh contracts after network switch
+      if (web3) {
+        await loadBlockchainContracts(web3);
+      }
+    } catch (error) {
+      Logger.error('Network switch failed', error);
+      throw error;
+    }
+  };
+
+
   // Type-safe contract address retrieval
   const getContractAddress = (contract: ContractType): string => {
     // Check for address property
@@ -73,13 +144,13 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
     return 'Address not found';
   };
 
-  const loadBlockchainContracts = async (web3Instance: Web3): Promise<void> => {
+  const loadBlockchainContracts = async (web3Instance: Web3): Promise<{ [key: string]: PasschainContract }> => {
     try {
       setIsLoading(true);
       const loadedContracts = await loadContracts(web3Instance);
       
       // Verify each contract was loaded correctly
-      const verifiedContracts: {[key: string]: ContractType} = {};
+      const verifiedContracts: { [key: string]: PasschainContract } = {};
       for (const [name, contract] of Object.entries(loadedContracts)) {
         if (!contract || !contract.methods) {
           Logger.warn(`Contract ${name} failed to load correctly`);
@@ -87,7 +158,7 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         }
         verifiedContracts[name] = contract;
       }
-
+  
       if (Object.keys(verifiedContracts).length === 0) {
         throw new Error('No contracts could be loaded');
       }
@@ -99,59 +170,18 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         contractAddresses: Object.fromEntries(
           Object.entries(verifiedContracts).map(([name, contract]) => [
             name, 
-            getContractAddress(contract)
+            contract.address || contract.options.address
           ])
         )
       });
+  
+      return verifiedContracts; // Return the loaded contracts
     } catch (error) {
       Logger.error('Failed to load contracts', error);
       setIsContractInitialized(false);
       throw new Error('Contract loading failed');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const connect = async (): Promise<void> => {
-    // Ensure this only runs on the client
-    if (!isClient) return;
-  
-    Logger.info('Attempting to connect blockchain');
-    
-    try {
-      // Check for ethereum provider
-      const ethereum = (window as any).ethereum;
-      if (!ethereum) {
-        Logger.warn('Ethereum provider not found');
-        throw new Error('Non-Ethereum browser detected. Consider trying MetaMask!');
-      }
-  
-      // Request account access
-      await ethereum.request({ method: 'eth_requestAccounts' });
-      
-      // Create Web3 instance
-      const web3Instance = new Web3(ethereum);
-      
-      // Get accounts
-      const accs = await web3Instance.eth.getAccounts();
-      if (accs.length === 0) {
-        throw new Error('No accounts found');
-      }
-  
-      // Update state
-      setWeb3(web3Instance);
-      setAccounts(accs);
-  
-      // Load contracts
-      await loadBlockchainContracts(web3Instance);
-  
-      Logger.info('Blockchain connected successfully', { 
-        accounts: accs,
-        contractsLoaded: Object.keys(contracts).length
-      });
-    } catch (error) {
-      Logger.error('Blockchain connection failed', error);
-      throw error;
     }
   };
 
@@ -308,6 +338,8 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
       contracts, 
       connect, 
       processTransaction,
+      switchNetwork,
+      blockchainService,
       isLoading 
     }}>
       {children}

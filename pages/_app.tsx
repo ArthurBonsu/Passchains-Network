@@ -1,7 +1,9 @@
-import type { AppProps } from 'next/app'
-import { useRouter } from 'next/router'
-import dynamic from 'next/dynamic'
-import { ReactNode, useState, useEffect } from 'react'
+import type { AppProps } from 'next/app';
+import { useRouter } from 'next/router';
+import dynamic from 'next/dynamic';
+import { ReactNode, useState, useEffect } from 'react';
+import { TransactionProvider } from '@/contexts/TransactionContext';
+import { BlockchainProvider } from '../components/BlockchainContext';
 
 // Import GlobalErrorHandler dynamically with SSR
 const GlobalErrorHandler = dynamic(
@@ -10,7 +12,7 @@ const GlobalErrorHandler = dynamic(
     ssr: true,
     loading: () => null  // Use null instead of a loading div
   }
-)
+);
 
 // Type the NoSSR component props
 interface NoSSRProps {
@@ -30,17 +32,21 @@ const NoSSR: React.FC<NoSSRProps> = ({ children }) => {
   }
 
   return <>{children}</>;
-}
+};
 
 // Main App component
 function MyApp({ Component, pageProps }: AppProps) {
   return (
     <GlobalErrorHandler>
       <NoSSR>
-        <Component {...pageProps} />
+        <BlockchainProvider>
+          <TransactionProvider>
+            <Component {...pageProps} />
+          </TransactionProvider>
+        </BlockchainProvider>
       </NoSSR>
     </GlobalErrorHandler>
-  )
+  );
 }
 
-export default MyApp
+export default MyApp;

@@ -16,12 +16,10 @@ const TransactionForm: React.FC = () => {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Ensure client-side rendering
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Prevent rendering on server
   if (!isClient) {
     return null;
   }
@@ -46,20 +44,20 @@ const TransactionForm: React.FC = () => {
 
     try {
       setError(null);
-      const transactionResult = await processTransaction(formData);
+      const result = await processTransaction(formData);
       const endTime = performance.now();
       
-      // Manually add transaction if not handled in processTransaction
       addTransaction({
         ...formData,
-        blockchainResults: transactionResult,
+        blockchainResults: result,
         processingTime: endTime - startTime,
         timestamp: Date.now()
       });
 
-      setResult(transactionResult);
+      setResult(result);
+      setFormData({ city: '', date: '', sector: '', ktCO2: '' }); // Clear form
       Logger.info('Transaction processed successfully', { 
-        transactionResult,
+        result,
         processingTime: endTime - startTime 
       });
     } catch (err) {
