@@ -1,5 +1,4 @@
 // utils/logger.ts
-
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 interface LoggerOptions {
@@ -8,49 +7,73 @@ interface LoggerOptions {
   metadata?: Record<string, any>
 }
 
+// Store the original console methods to prevent recursive calls
+const originalConsoleMethods = {
+  error: console.error,
+  log: console.log,
+  warn: console.warn,
+  debug: console.debug
+}
+
 export const Logger = {
   info: (message: string, ...args: any[]) => {
     if (process.env.NEXT_PUBLIC_DEBUG === 'true' || process.env.NODE_ENV !== 'production') {
       const timestamp = new Date().toISOString()
-      console.log(`[INFO] [${timestamp}] ${message}`, ...args)
+      originalConsoleMethods.log(`[INFO] [${timestamp}] ${message}`, ...args)
     }
   },
 
   error: (message: string, error?: any) => {
     const timestamp = new Date().toISOString()
-    console.error(`[ERROR] [${timestamp}] ${message}`, error)
     
-    // Additional error tracking could be added here
-    if (error instanceof Error) {
-      console.error('Stack trace:', error.stack)
+    // Use original console.error to prevent recursive logging
+/**
+ * Logs a warning message to the console along with optional additional arguments.
+ * The message is prefixed with a timestamp and labeled as a warning.
+ * Logging occurs only when the environment is not production or when debug mode is enabled.
+ *
+ * @param message - The main warning message to log.
+ * @param args - Additional optional arguments to log.
+ */
+
+    try {
+      originalConsoleMethods.error(`[ERROR] [${timestamp}] ${message}`, error)
+      
+      // Additional error tracking
+      if (error instanceof Error) {
+        originalConsoleMethods.error('Stack trace:', error.stack)
+      }
+    } catch (logError) {
+      // Fallback logging if something goes wrong
+      originalConsoleMethods.error('Error during logging:', logError)
     }
   },
 
   warn: (message: string, ...args: any[]) => {
     if (process.env.NODE_ENV !== 'production' || process.env.NEXT_PUBLIC_DEBUG === 'true') {
       const timestamp = new Date().toISOString()
-      console.warn(`[WARN] [${timestamp}] ${message}`, ...args)
+      originalConsoleMethods.warn(`[WARN] [${timestamp}] ${message}`, ...args)
     }
   },
 
   debug: (message: string, ...args: any[]) => {
     if (process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_DEBUG === 'true') {
       const timestamp = new Date().toISOString()
-      console.debug(`[DEBUG] [${timestamp}] ${message}`, ...args)
+      originalConsoleMethods.debug(`[DEBUG] [${timestamp}] ${message}`, ...args)
     }
   },
 
-  // New method for logging with custom options
   log: (level: LogLevel, message: string, options?: LoggerOptions, ...args: any[]) => {
-    const shouldLog = 
-      process.env.NODE_ENV === 'development' || 
-      process.env.NEXT_PUBLIC_DEBUG === 'true' || 
+    const shouldLog =
+      process.env.NODE_ENV === 'development' ||
+      process.env.NEXT_PUBLIC_DEBUG === 'true' ||
       level === 'error'
-
+    
     if (!shouldLog) return
 
     const timestamp = options?.timestamp ? new Date().toISOString() : undefined
     const metadata = options?.metadata ? JSON.stringify(options.metadata) : ''
+
     const logMessage = [
       `[${level.toUpperCase()}]`,
       timestamp ? `[${timestamp}]` : '',
@@ -58,39 +81,31 @@ export const Logger = {
       message
     ].filter(Boolean).join(' ')
 
-    switch (level) {
-      case 'debug':
-        console.debug(logMessage, ...args)
-        break
-      case 'info':
-        console.log(logMessage, ...args)
-        break
-      case 'warn':
-        console.warn(logMessage, ...args)
-        break
-      case 'error':
-        console.error(logMessage, ...args)
-        // Log stack trace if last argument is an Error
-        const lastArg = args[args.length - 1]
-        if (lastArg instanceof Error) {
-          console.error('Stack trace:', lastArg.stack)
-        }
-        break
+    try {
+      switch (level) {
+        case 'debug':
+          originalConsoleMethods.debug(logMessage, ...args)
+          break
+        case 'info':
+          originalConsoleMethods.log(logMessage, ...args)
+          break
+        case 'warn':
+          originalConsoleMethods.warn(logMessage, ...args)
+          break
+        case 'error':
+          originalConsoleMethods.error(logMessage, ...args)
+          // Log stack trace if last argument is an Error
+          const lastArg = args[args.length - 1]
+          if (lastArg instanceof Error) {
+            originalConsoleMethods.error('Stack trace:', lastArg.stack)
+          }
+          break
+      }
+    } catch (logError) {
+      // Fallback logging if something goes wrong
+      originalConsoleMethods.error('Error during logging:', logError)
     }
   }
 }
-
-// Usage examples:
-/*
-Logger.info('Application started', { version: '1.0.0' })
-Logger.error('Failed to process transaction', new Error('Network error'))
-Logger.warn('Performance degradation detected', { latency: 500 })
-Logger.debug('Processing request', { requestId: '123', payload: {} })
-
-Logger.log('info', 'Custom log message', {
-  timestamp: true,
-  metadata: { userId: '123', action: 'login' }
-})
-*/
 
 export default Logger

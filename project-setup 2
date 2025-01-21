@@ -50,6 +50,7 @@
 │       └── ZKPVerifierBase.json
 ├── components/
 │   ├── BlockchainContext.tsx
+│   ├── ClientInit.tsx
 │   ├── GlobalErrorHandler.tsx
 │   ├── PerformanceMetrics.tsx
 │   └── TransactionForm.tsx

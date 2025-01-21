@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useBlockchain } from '../components/BlockchainContext';
 import { Logger } from '../utils/logger';
 
 const TransactionForm: React.FC = () => {
   const { web3, accounts, connect, processTransaction } = useBlockchain();
+  const [isClient, setIsClient] = useState(false);
   const [formData, setFormData] = useState({
     city: '',
     date: '',
@@ -12,6 +13,16 @@ const TransactionForm: React.FC = () => {
   });
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Ensure client-side rendering
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Prevent rendering on server
+  if (!isClient) {
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

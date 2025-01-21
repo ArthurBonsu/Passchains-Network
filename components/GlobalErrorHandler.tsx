@@ -1,12 +1,20 @@
-import React, { PropsWithChildren } from 'react';
+import React, { PropsWithChildren, useEffect, useState } from 'react';
 import { Logger } from '../utils/logger';
 
 const GlobalErrorHandler: React.FC<PropsWithChildren<{}>> = ({ children }) => {
-  React.useEffect(() => {
-    // Ensure this only runs on the client-side
-    if (typeof window !== 'undefined') {
-      // Global error logging
-      const handleError = (event: ErrorEvent) => {
+  const [isClient, setIsClient] = useState(false);
+
+  useEffect(() => {
+    // Mark as client-side
+    setIsClient(true);
+
+    // Store the original console methods
+    const originalConsoleError = console.error;
+    const originalConsoleLog = console.log;
+
+    // Global error logging
+    const handleError = (event: ErrorEvent) => {
+      try {
         Logger.error('Uncaught Client-Side Error', {
           message: event.error?.message,
           stack: event.error?.stack,
@@ -14,42 +22,76 @@ const GlobalErrorHandler: React.FC<PropsWithChildren<{}>> = ({ children }) => {
           lineno: event.lineno,
           colno: event.colno
         });
-      };
+      } catch {
+        // Fallback to original console if Logger fails
+        originalConsoleError('Uncaught Client-Side Error', {
+          message: event.error?.message,
+          stack: event.error?.stack
+        });
+      }
+    };
 
-      // Unhandled Promise Rejection Logging
-      const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+    // Unhandled Promise Rejection Logging
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      try {
         Logger.error('Unhandled Promise Rejection', {
           reason: event.reason,
           promise: event.promise
         });
-      };
+      } catch {
+        // Fallback to original console if Logger fails
+        originalConsoleError('Unhandled Promise Rejection', {
+          reason: event.reason
+        });
+      }
+    };
 
-      // Console error interception for additional logging
-      const originalConsoleError = console.error;
-      console.error = (...args: any[]) => {
+    // Console error interception with safe logging
+    const safeConsoleError = (...args: any[]) => {
+      try {
         Logger.error('Console Error', { args });
+      } catch {
+        // Use original console.error if Logger fails
         originalConsoleError(...args);
-      };
+      }
+      // Always call the original console error
+      originalConsoleError(...args);
+    };
 
-      // Add global error listeners
-      window.addEventListener('error', handleError);
-      window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    // Replace console.error with safe version
+    console.error = safeConsoleError;
 
-      // Log component initialization
+    // Add global error listeners
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    // Log component initialization
+    try {
       Logger.info('GlobalErrorHandler initialized');
-
-      // Cleanup listeners on unmount
-      return () => {
-        window.removeEventListener('error', handleError);
-        window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-        
-        // Restore original console.error
-        console.error = originalConsoleError;
-        
-        Logger.info('GlobalErrorHandler unmounted');
-      };
+    } catch {
+      originalConsoleLog('GlobalErrorHandler initialized');
     }
+
+    // Cleanup listeners on unmount
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+      
+      // Restore original console.error
+      console.error = originalConsoleError;
+
+      try {
+        Logger.info('GlobalErrorHandler unmounted');
+      } catch {
+        originalConsoleLog('GlobalErrorHandler unmounted');
+      }
+    };
   }, []);
+
+  // Render nothing on server, children on client
+  if (!isClient) {
+    return null;
+  }
 
   return <>{children}</>;
 };

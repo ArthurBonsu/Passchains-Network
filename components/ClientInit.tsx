@@ -1,8 +1,13 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Logger } from '@/utils/logger';
 
 export function ClientInit() {
+  const [isClient, setIsClient] = useState(false);
+
   useEffect(() => {
+    // Mark as client-side
+    setIsClient(true);
+
     // Comprehensive logging for initialization
     try {
       const startTime = performance.now();
@@ -39,5 +44,10 @@ export function ClientInit() {
     }
   }, []);
 
-  return null;
-}
+  // Return null on server to prevent hydration mismatches
+  if (!isClient) {
+    return null;
+  }
+
+  return null
+};

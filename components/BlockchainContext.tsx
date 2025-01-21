@@ -1,14 +1,18 @@
-import React, { createContext, useContext, useState, PropsWithChildren } from 'react';
+import React, { createContext, useContext, useState, PropsWithChildren, useEffect } from 'react';
 import Web3 from 'web3';
 import { Contract } from 'web3-eth-contract';
 import { loadContracts, PasschainContract } from '../utils/contract-loader';
 import { Logger } from '../utils/logger';
 
+// First fix: Create a union type that encompasses both Contract and PasschainContract
+type ContractType = Contract | PasschainContract;
+
 interface BlockchainContextType {
   web3: Web3 | null;
   accounts: string[];
+  // Update the contracts type to use our new union type
   contracts: {
-    [key: string]: Contract;
+    [key: string]: ContractType;
   };
   connect: () => Promise<void>;
   processTransaction: (data: any) => Promise<TransactionResult>;
@@ -37,8 +41,10 @@ const BlockchainContext = createContext<BlockchainContextType>({
 export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const [web3, setWeb3] = useState<Web3 | null>(null);
   const [accounts, setAccounts] = useState<string[]>([]);
-  const [contracts, setContracts] = useState<{[key: string]: PasschainContract}>({});  // Changed type here
+  // Update the state type to match our context type
+  const [contracts, setContracts] = useState<{[key: string]: ContractType}>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isClient, setIsClient] = useState(false);
  
   const loadBlockchainContracts = async (web3Instance: Web3): Promise<void> => {
     try {
@@ -62,6 +68,9 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
   };
 
   const connect = async (): Promise<void> => {
+    // Ensure this only runs on the client
+    if (!isClient) return;
+
     Logger.info('Attempting to connect blockchain');
     setIsLoading(true);
     
@@ -97,6 +106,11 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
   };
 
   const processTransaction = async (data: any): Promise<TransactionResult> => {
+    // Ensure client-side execution
+    if (!isClient) {
+      throw new Error('Transaction processing is client-side only');
+    }
+
     if (isLoading) {
       throw new Error('Blockchain is still initializing');
     }
@@ -163,6 +177,16 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
       throw error;
     }
   };
+
+  // Ensure client-side initialization
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Only render provider on client
+  if (!isClient) {
+    return null;
+  }
 
   return (
     <BlockchainContext.Provider value={{ 

@@ -1,14 +1,14 @@
 import type { AppProps } from 'next/app'
 import { useRouter } from 'next/router'
 import dynamic from 'next/dynamic'
-import { ReactNode } from 'react'
+import { ReactNode, useState, useEffect } from 'react'
 
-// Import GlobalErrorHandler dynamically with no SSR
+// Import GlobalErrorHandler dynamically with SSR
 const GlobalErrorHandler = dynamic(
   () => import('@/components/GlobalErrorHandler'),
   {
-    ssr: false,
-    loading: () => <div>Loading...</div>
+    ssr: true,
+    loading: () => null  // Use null instead of a loading div
   }
 )
 
@@ -19,21 +19,27 @@ interface NoSSRProps {
 
 // Create NoSSR wrapper component with proper typing
 const NoSSR: React.FC<NoSSRProps> = ({ children }) => {
-  return (
-    <div suppressHydrationWarning>
-      {typeof window === 'undefined' ? null : children}
-    </div>
-  )
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) {
+    return null;
+  }
+
+  return <>{children}</>;
 }
 
 // Main App component
 function MyApp({ Component, pageProps }: AppProps) {
   return (
-    <NoSSR>
-      <GlobalErrorHandler>
+    <GlobalErrorHandler>
+      <NoSSR>
         <Component {...pageProps} />
-      </GlobalErrorHandler>
-    </NoSSR>
+      </NoSSR>
+    </GlobalErrorHandler>
   )
 }
 
