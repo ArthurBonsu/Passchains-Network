@@ -102,6 +102,16 @@ const nextConfig = {
     removeConsole: process.env.NODE_ENV === 'production',
     reactRemoveProperties: process.env.NODE_ENV === 'production',
   },
+
+   // Add environment variables
+   env: {
+    ETHEREUM_PROVIDER_URL: process.env.ETHEREUM_PROVIDER_URL,
+    POLKADOT_PROVIDER_URL: process.env.POLKADOT_PROVIDER_URL,
+    TATUM_API_KEY: process.env.TATUM_API_KEY,
+    METADATA_PARSER_ADDRESS: process.env.METADATA_PARSER_ADDRESS,
+    PACECHAIN_CHANNEL_ADDRESS: process.env.PACECHAIN_CHANNEL_ADDRESS,
+    RELAY_CHAIN_ADDRESS: process.env.RELAY_CHAIN_ADDRESS
+  },
 };
 
 module.exports = nextConfig;

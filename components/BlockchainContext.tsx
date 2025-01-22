@@ -7,7 +7,7 @@ import { Logger } from '../utils/logger';
 import { useTransactions } from '../contexts/TransactionContext';
 import { BlockchainService } from '../services/blockchain-service'; // Add this import
 import networkConfig from '../config/network_config'; // 
-
+import { CrossChainService, CrossChainTransactionData } from '../services/cross-chain-service';
 // Updated type definition to handle different contract types
 
 // Add NetworkSwitchOptions interface
@@ -304,6 +304,25 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         processingTime
       });
   
+
+      // Cross-chain transaction processing
+const crossChainData: CrossChainTransactionData = {
+  ...data,
+  ethereumAddress: accounts[0],
+  // Optional Polkadot address if available
+  polkadotAddress: data.polkadotAddress 
+};
+
+const crossChainResult = await CrossChainService.processCrossChainTransaction(crossChainData);
+
+// Merge local and cross-chain results
+const mergedResult = {
+  ...result,
+  crossChainHashes: crossChainResult.transactionHashes
+};
+
+return mergedResult;
+
       Logger.info('Transaction processed successfully', result);
       return result;
     } catch (error) {
@@ -319,6 +338,9 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
   
       throw error;
     }
+
+
+
   };
 
   // Ensure client-side initialization
