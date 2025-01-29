@@ -8114,7 +8114,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-29T15:20:38.506Z",
+  "updatedAt": "2025-01-29T15:56:10.972Z",
   "devdoc": {
     "details": "Base contract containing shared data structures and events",
     "kind": "dev",

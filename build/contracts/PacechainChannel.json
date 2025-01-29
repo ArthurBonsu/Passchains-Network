@@ -24625,7 +24625,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-29T15:20:38.559Z",
+  "updatedAt": "2025-01-29T15:56:11.031Z",
   "devdoc": {
     "details": "Manages transmission channels between blockchains",
     "kind": "dev",

@@ -19229,7 +19229,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-29T15:20:38.582Z",
+  "updatedAt": "2025-01-29T15:56:11.057Z",
   "devdoc": {
     "details": "Manages the distribution of rewards across different components",
     "kind": "dev",

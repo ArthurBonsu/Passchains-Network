@@ -11,7 +11,7 @@ module.exports = {
     ethereum_testnet: {
       provider: () => new HDWalletProvider(
         process.env.MNEMONIC,
-        `https://goerli.infura.io/v3/${process.env.INFURA_PROJECT_ID}`
+        `https://sepolia.infura.io/v3/${process.env.INFURA_PROJECT_ID}`
       ),
       network_id: 5,
       gas: 5500000,

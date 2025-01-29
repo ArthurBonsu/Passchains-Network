@@ -9114,7 +9114,7 @@
   },
   "networks": {},
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-29T15:20:38.574Z",
+  "updatedAt": "2025-01-29T15:56:11.049Z",
   "devdoc": {
     "details": "Base contract with common reward functionality",
     "kind": "dev",

@@ -2050,7 +2050,7 @@
   },
   "networks": {},
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-29T15:20:38.623Z",
+  "updatedAt": "2025-01-29T15:56:11.099Z",
   "devdoc": {
     "details": "Library for fixed-point arithmetic operations",
     "kind": "dev",

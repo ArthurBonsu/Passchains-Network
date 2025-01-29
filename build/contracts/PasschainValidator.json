@@ -24756,7 +24756,7 @@
   },
   "networks": {},
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-29T15:20:38.535Z",
+  "updatedAt": "2025-01-29T15:56:11.006Z",
   "devdoc": {
     "details": "Manages PoA validation process for transactions",
     "kind": "dev",

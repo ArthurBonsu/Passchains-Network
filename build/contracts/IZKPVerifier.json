@@ -7662,7 +7662,7 @@
   },
   "networks": {},
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-29T15:20:38.588Z",
+  "updatedAt": "2025-01-29T15:56:11.064Z",
   "devdoc": {
     "details": "Interface for ZK-SNARK verification functions",
     "kind": "dev",

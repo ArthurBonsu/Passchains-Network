@@ -13687,7 +13687,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-29T15:20:38.601Z",
+  "updatedAt": "2025-01-29T15:56:11.078Z",
   "devdoc": {
     "details": "Manages PoS validation for relay chain",
     "kind": "dev",
