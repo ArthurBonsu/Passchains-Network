@@ -25803,7 +25803,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-22T20:38:12.156Z",
+  "updatedAt": "2025-01-29T15:20:38.565Z",
   "devdoc": {
     "details": "Handles creation and management of speculative transactions",
     "kind": "dev",

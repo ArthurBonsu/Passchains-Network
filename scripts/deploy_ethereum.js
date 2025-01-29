@@ -8,13 +8,21 @@ const path = require('path');
 const glob = require('glob');
 
 // Environment variables with validation
-const TATUM_API_KEY = process.env.TATUM_API_KEY;
+const NEXT_PUBLIC_TATUM_API_KEY = process.env.NEXT_PUBLIC_TATUM_API_KEY;
 const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const INFURA_URL = process.env.ETHEREUM_PROVIDER_URL;
 
 // Updated providers configuration with error handling
 const providers = [
+ 
+  {
+    url: INFURA_URL,
+    name: 'Infura',
+    minBalance: '0.1',
+    retryAttempts: 3,
+    timeout: 30000 // 30 seconds
+  },
   {
     url: 'https://ethereum-sepolia.gateway.tatum.io/',
     name: 'Tatum',
@@ -22,148 +30,110 @@ const providers = [
     headers: {
       'accept': 'application/json',
       'content-type': 'application/json',
-      'x-api-key': TATUM_API_KEY
-    }
-  },
-  {
-    url: INFURA_URL,
-    name: 'Infura',
-    minBalance: '0.1'
+      'x-api-key': NEXT_PUBLIC_TATUM_API_KEY
+    },
+    retryAttempts: 3,
+    timeout: 30000
   }
 ];
-
 // Enhanced error handling for provider testing
 async function testProviderConnection(provider) {
-  if (provider.name === 'Tatum') {
+  const maxRetries = provider.retryAttempts || 3;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const response = await axios.post(provider.url, {
-        jsonrpc: '2.0',
-        method: 'eth_blockNumber',
-        id: 1
-      }, {
-        headers: provider.headers,
-        timeout: 10000 // 10 second timeout
-      });
-      
-      if (!response.data) {
-        throw new Error('No response data received');
+      if (provider.name === 'Tatum') {
+        const response = await axios.post(
+          provider.url, 
+          {
+            jsonrpc: '2.0',
+            method: 'eth_blockNumber',
+            id: 1
+          },
+          {
+            headers: provider.headers,
+            timeout: provider.timeout
+          }
+        );
+
+        if (response.data && !response.data.error) {
+          console.log(`${provider.name} connection test successful (attempt ${attempt})`);
+          return true;
+        }
+      } else {
+        // Test other providers
+        const web3 = new Web3(new Web3.providers.HttpProvider(provider.url));
+        await web3.eth.getBlockNumber();
+        console.log(`${provider.name} connection test successful (attempt ${attempt})`);
+        return true;
       }
-      
-      if (response.data.error) {
-        throw new Error(`RPC Error: ${JSON.stringify(response.data.error)}`);
-      }
-      
-      if (!response.data.result) {
-        throw new Error('No result in response');
-      }
-      
-      console.log(`${provider.name} connection test successful`);
-      return true;
     } catch (error) {
-      console.error(`${provider.name} connection test failed:`, {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status
-      });
-      return false;
+      lastError = error;
+      console.log(`${provider.name} connection attempt ${attempt} failed:`, error.message);
+      
+      if (attempt < maxRetries) {
+        const delay = attempt * 2000; // Exponential backoff
+        console.log(`Retrying in ${delay/1000} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
-  return true;
+
+  console.error(`All ${maxRetries} attempts failed for ${provider.name}. Last error:`, lastError.message);
+  return false;
 }
 
-// Improved Web3 provider setup with better error handling
 async function getWeb3Provider(privateKey) {
   if (!privateKey) {
     throw new Error('Private key not found in environment variables');
   }
 
-  let lastError = null;
-  
   for (const provider of providers) {
-    let web3Provider = null;
+    console.log(`Attempting to connect to ${provider.name} with URL: ${provider.url}`);
     
+    const isConnected = await testProviderConnection(provider);
+    if (!isConnected) {
+      continue;
+    }
+
     try {
-      console.log(`Attempting to connect to ${provider.name} with URL: ${provider.url}`);
-      
-      if (!provider.url) {
-        throw new Error(`Provider URL not configured for ${provider.name}`);
-      }
-
-      // Test provider connectivity first
-      const isConnected = await testProviderConnection(provider);
-      if (!isConnected) {
-        throw new Error(`Failed to connect to ${provider.name}`);
-      }
-
-      // Configure provider with appropriate headers and error handling
       const providerOptions = {
         privateKeys: [privateKey],
         providerOrUrl: provider.url,
         pollingInterval: 8000,
-        timeout: 10000
+        networkCheckTimeout: 100000,
+        timeoutBlocks: 200
       };
 
-      if (provider.name === 'Tatum' && provider.headers) {
+      if (provider.headers) {
         providerOptions.headers = provider.headers;
       }
 
-      try {
-        web3Provider = new HDWalletProvider(providerOptions);
-      } catch (error) {
-        throw new Error(`Failed to create HDWalletProvider: ${error.message}`);
-      }
-
-      const web3 = new Web3(web3Provider);
+      const hdWalletProvider = new HDWalletProvider(providerOptions);
       
-      // Test the connection with a timeout
+      // Test the connection with timeout
+      const web3 = new Web3(hdWalletProvider);
       const accounts = await Promise.race([
         web3.eth.getAccounts(),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Account retrieval timeout')), 10000)
+          setTimeout(() => reject(new Error('Connection timeout')), provider.timeout)
         )
       ]);
-      
+
       if (!accounts || accounts.length === 0) {
-        throw new Error('No accounts found with provided private key');
+        throw new Error('No accounts found');
       }
 
-      const accountDisplay = `${accounts[0].slice(0, 6)}...${accounts[0].slice(-4)}`;
-      console.log(`Account loaded: ${accountDisplay}`);
-
-      try {
-        const balance = await web3.eth.getBalance(accounts[0]);
-        const balanceInEth = web3.utils.fromWei(balance, 'ether');
-        
-        console.log(`Connected to ${provider.name}. Account balance: ${balanceInEth} ETH`);
-        
-        if (parseFloat(balanceInEth) >= parseFloat(provider.minBalance)) {
-          return { web3, provider: web3Provider };
-        }
-        
-        throw new Error(`Insufficient balance on ${provider.name}`);
-      } catch (error) {
-        throw new Error(`Failed to get balance: ${error.message}`);
-      }
+      console.log(`Connected to ${provider.name}`);
+      return { web3, provider: hdWalletProvider };
     } catch (error) {
-      lastError = error;
-      console.error(`Failed to connect to ${provider.name}:`, error.message);
-      
-      if (web3Provider && web3Provider.engine) {
-        try {
-          await new Promise((resolve) => {
-            web3Provider.engine.stop();
-            resolve();
-          });
-        } catch (stopError) {
-          console.error(`Error stopping provider engine: ${stopError.message}`);
-        }
-      }
-      
+      console.error(`Failed to initialize ${provider.name} provider:`, error.message);
       continue;
     }
   }
 
-  throw new Error(`No viable provider found. Last error: ${lastError?.message}`);
+  throw new Error('No viable provider found');
 }
 
 async function retryOperation(operation, maxRetries = 3, delay = 2000) {
@@ -376,7 +346,7 @@ if (require.main === module) {
   
     // Validate required environment variables
     const requiredEnvVars = {
-      'TATUM_API_KEY': TATUM_API_KEY,
+      'NEXT_PUBLIC_TATUM_API_KEY': NEXT_PUBLIC_TATUM_API_KEY,
       'PRIVATE_KEY': PRIVATE_KEY,
       'ETHERSCAN_API_KEY': ETHERSCAN_API_KEY
     };

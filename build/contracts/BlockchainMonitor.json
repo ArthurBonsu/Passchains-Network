@@ -15610,7 +15610,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-22T20:38:12.088Z",
+  "updatedAt": "2025-01-29T15:20:38.498Z",
   "devdoc": {
     "details": "Monitors registered blockchains for security and connectivity",
     "kind": "dev",

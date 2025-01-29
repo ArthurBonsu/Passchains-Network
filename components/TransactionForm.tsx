@@ -7,6 +7,8 @@ const TransactionForm: React.FC = () => {
   const { web3, accounts, connect, processTransaction } = useBlockchain();
   const { addTransaction } = useTransactions();
   const [isClient, setIsClient] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [formData, setFormData] = useState({
     city: '',
     date: '',
@@ -20,50 +22,90 @@ const TransactionForm: React.FC = () => {
     setIsClient(true);
   }, []);
 
+  useEffect(() => {
+    // Log connection status changes
+    Logger.info('Connection status', {
+      isClient,
+      web3Exists: !!web3,
+      accountsCount: accounts?.length || 0,
+      contractsInitialized: !!processTransaction
+    });
+  }, [web3, accounts, isClient]);
+
   if (!isClient) {
     return null;
   }
 
+  const handleConnect = async () => {
+    setIsConnecting(true);
+    setError(null);
+    
+    try {
+      Logger.info('Attempting wallet connection');
+      await connect();
+      Logger.info('Wallet connected successfully');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to connect wallet';
+      Logger.error('Wallet connection error', { error: errorMessage, details: err });
+      setError(errorMessage);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    const startTime = performance.now();
-    
-    Logger.info('Transaction form submitted', { formData });
-
     if (!web3 || accounts.length === 0) {
-      try {
-        await connect();
-        Logger.info('Wallet connected');
-      } catch (connectError) {
-        Logger.error('Wallet connection failed', connectError);
-        setError('Failed to connect wallet');
-        return;
+      await handleConnect();
+      if (!web3 || accounts.length === 0) {
+        return; // Exit if connection failed
       }
     }
 
-    try {
-      setError(null);
-      const result = await processTransaction(formData);
-      const endTime = performance.now();
-      
-      addTransaction({
-        ...formData,
-        blockchainResults: result,
-        processingTime: endTime - startTime,
-        timestamp: Date.now()
-      });
+    setIsProcessing(true);
+    setError(null);
+    const startTime = performance.now();
+    
+    Logger.info('Transaction form submitted', { 
+      formData,
+      connectionStatus: {
+        web3Exists: !!web3,
+        accountsCount: accounts?.length || 0
+      }
+    });
 
-      setResult(result);
+    try {
+      const transactionResult = await processTransaction(formData);
+      const endTime = performance.now();
+      const processingTime = endTime - startTime;
+
+      const transactionData = {
+        ...formData,
+        blockchainResults: transactionResult,
+        processingTime,
+        timestamp: Date.now()
+      };
+
+      addTransaction(transactionData);
+      setResult(transactionResult);
       setFormData({ city: '', date: '', sector: '', ktCO2: '' }); // Clear form
+
       Logger.info('Transaction processed successfully', { 
-        result,
-        processingTime: endTime - startTime 
+        transactionResult,
+        processingTime,
+        transactionData
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      Logger.error('Transaction processing error', { error: errorMessage });
+      Logger.error('Transaction processing error', { 
+        error: errorMessage, 
+        details: err,
+        formData 
+      });
       setError(errorMessage);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -74,6 +116,8 @@ const TransactionForm: React.FC = () => {
       [name]: value
     }));
   };
+
+  const isWalletConnected = web3 && accounts.length > 0;
 
   return (
     <div className="transaction-form">
@@ -87,6 +131,7 @@ const TransactionForm: React.FC = () => {
             onChange={handleChange}
             className="w-full p-2 border rounded"
             required 
+            disabled={isProcessing}
           />
           <input 
             type="date" 
@@ -95,6 +140,7 @@ const TransactionForm: React.FC = () => {
             onChange={handleChange}
             className="w-full p-2 border rounded"
             required 
+            disabled={isProcessing}
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -106,6 +152,7 @@ const TransactionForm: React.FC = () => {
             onChange={handleChange}
             className="w-full p-2 border rounded"
             required 
+            disabled={isProcessing}
           />
           <input 
             type="number" 
@@ -116,19 +163,30 @@ const TransactionForm: React.FC = () => {
             step="0.00000001"
             className="w-full p-2 border rounded"
             required 
+            disabled={isProcessing}
           />
         </div>
         <button 
           type="submit"
-          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition"
+          className={`w-full p-2 rounded transition ${
+            isProcessing || isConnecting
+              ? 'bg-gray-400 cursor-not-allowed'
+              : isWalletConnected
+              ? 'bg-blue-500 hover:bg-blue-600 text-white'
+              : 'bg-green-500 hover:bg-green-600 text-white'
+          }`}
+          disabled={isProcessing || isConnecting}
         >
-          {accounts.length > 0 ? 'Process Transaction' : 'Connect Wallet'}
+          {isProcessing ? 'Processing...' : 
+           isConnecting ? 'Connecting...' :
+           isWalletConnected ? 'Process Transaction' : 'Connect Wallet'}
         </button>
       </form>
 
       {error && (
         <div className="mt-4 p-2 bg-red-100 text-red-700 rounded">
-          {error}
+          <p className="font-medium">Error:</p>
+          <p>{error}</p>
         </div>
       )}
       

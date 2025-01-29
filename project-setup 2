@@ -58,6 +58,7 @@
 │   ├── contract_addresses.json
 │   ├── network_config.d.ts
 │   └── network_config.js
+        tatum-config.ts
 ├── contexts/
 │   └── TransactionContext.tsx
 ├── constants/
@@ -106,6 +107,7 @@
 │       blockchain-service.ts
 │       contract-interactions.ts
 │       transaction-processor.ts
+        tatum-blockchain-service.ts
 │
 ├───test
 │       blockchain_registry_test.js

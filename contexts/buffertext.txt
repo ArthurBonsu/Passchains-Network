@@ -1,5 +1,4 @@
-import React, { createContext, useContext, useState, PropsWithChildren, useEffect, useCallback, useMemo } from 'react';
-
+import React, { createContext, useContext, useState, PropsWithChildren, useEffect } from 'react';
 import Web3 from 'web3';
 import { Contract } from 'web3-eth-contract';
 import { loadContracts, PasschainContract } from '../utils/contract-loader';
@@ -257,26 +256,25 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
     }
   };
 
- // Wrap connect in useCallback
- const connect = useCallback(async (options: ConnectionOptions = {}): Promise<{
-  success: boolean;
-  accounts?: string[];
-  error?: string;
-}> => {
-  const method = options.method || 'metamask';
+  const connect = async (options: ConnectionOptions = {}): Promise<{
+    success: boolean;
+    accounts?: string[];
+    error?: string;
+  }> => {
+    const method = options.method || 'metamask';
 
-  switch (method) {
-    case 'metamask':
-      return await connectMetaMask(options.network);
-    case 'tatum':
-      return await connectTatum(options.tatumOptions);
-    default:
-      return {
-        success: false,
-        error: 'Invalid connection method'
-      };
-  }
-}, []); //
+    switch (method) {
+      case 'metamask':
+        return await connectMetaMask(options.network);
+      case 'tatum':
+        return await connectTatum(options.tatumOptions);
+      default:
+        return {
+          success: false,
+          error: 'Invalid connection method'
+        };
+    }
+  };
 
   const disconnect = () => {
     setWeb3(null);
@@ -348,13 +346,11 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
     }
   };
 
-  const processTransaction = useCallback(async (data: any): Promise<TransactionResult> => {
-    // Check if it's client-side
+  const processTransaction = async (data: any): Promise<TransactionResult> => {
     if (!isClient) {
       throw new Error('Transaction processing is client-side only');
     }
   
-    // Check if blockchain is still loading
     if (isLoading) {
       throw new Error('Blockchain is still initializing');
     }
@@ -370,12 +366,11 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         }
       }
   
-      // Initialize contracts if not already done
       if (!isContractInitialized) {
         await loadBlockchainContracts(web3!);
       }
   
-      // Validate required contracts are present
+      // Required contract validation
       const requiredContracts = [
         'MetadataParser', 
         'PacechainChannel', 
@@ -393,7 +388,6 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         throw new Error(`Missing required contracts: ${missingContracts.join(', ')}`);
       }
   
-      // Destructure required contracts
       const { 
         MetadataParser, 
         PacechainChannel, 
@@ -402,11 +396,9 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         TransactionRelay 
       } = contracts;
   
-      // Prepare transaction data
       const encodedData = web3!.utils.fromAscii(JSON.stringify(data));
       const defaultOptions = { from: accounts[0] };
   
-      // Execute blockchain transactions
       const parsedMetadata = await MetadataParser.methods
         .parseMetadata(encodedData)
         .send(defaultOptions);
@@ -427,7 +419,6 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         .relayTransaction(encodedData)
         .send(defaultOptions);
   
-      // Prepare result object
       const result: TransactionResult = {
         parsedMetadata: parsedMetadata.transactionHash,
         speculativeTx: speculativeTx.transactionHash,
@@ -436,18 +427,16 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
         relayCrossChain: relayCrossChain.transactionHash
       };
   
-      // Calculate processing time
       const endTime = performance.now();
       const processingTime = endTime - startTime;
   
-      // Prepare cross-chain transaction data
+      // Cross-chain transaction processing
       const crossChainData: CrossChainTransactionData = {
         ...data,
         ethereumAddress: accounts[0],
         polkadotAddress: data.polkadotAddress 
       };
 
-      // Process cross-chain transaction
       const crossChainResult = await CrossChainService.processCrossChainTransaction(crossChainData);
   
       // Merge local and cross-chain results
@@ -469,23 +458,14 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
       Logger.error('Transaction processing error', error);
       throw error;
     }
-  }, [
-    // Dependencies for useCallback
-    isClient, 
-    web3, 
-    accounts, 
-    contracts, 
-    connect, 
-    loadBlockchainContracts,
-    addTransaction
-  ]);
+  };
 
-  // Client-side initialization effect
+
+  // Existing effects for client-side initialization and auto-connect
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Auto-connect effect
   useEffect(() => {
     const autoConnect = async () => {
       if (isClient) {
@@ -500,9 +480,13 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
     };
 
     autoConnect();
-  }, [isClient, connect]); // Add connect to dependency array
+  }, [isClient]);
 
-  // Render provider
+  // Only render provider on client
+  if (!isClient) {
+    return null;
+  }
+
   return (
     <BlockchainContext.Provider value={{ 
       web3, 
@@ -521,6 +505,7 @@ export const BlockchainProvider: React.FC<PropsWithChildren> = ({ children }) =>
     </BlockchainContext.Provider>
   );
 };
+
 export const useBlockchain = () => useContext(BlockchainContext);
 
 // Helper function to check blockchain connection possibility

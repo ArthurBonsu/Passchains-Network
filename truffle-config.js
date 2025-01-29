@@ -20,6 +20,22 @@ module.exports = {
       skipDryRun: true
     }
   },
+
+  networks: {
+    tatum_testnet: {
+      provider: () => new HDWalletProvider({
+        privateKeys: [process.env.PRIVATE_KEY],
+        providerOrUrl: 'https://ethereum-sepolia.gateway.tatum.io/',
+        headers: {
+          'x-api-key': process.env.NEXT_PUBLIC_TATUM_API_KEY
+        }
+      }),
+      network_id: 11155111, // Sepolia network ID
+      gas: 5500000,
+      confirmations: 2,
+      timeoutBlocks: 200
+    }
+  },
   compilers: {
     solc: {
       version: "0.8.17",

@@ -13721,7 +13721,7 @@
     }
   },
   "schemaVersion": "3.4.16",
-  "updatedAt": "2025-01-22T20:38:12.092Z",
+  "updatedAt": "2025-01-29T15:20:38.503Z",
   "devdoc": {
     "details": "Handles the registration of blockchains in the PAYS system",
     "kind": "dev",
