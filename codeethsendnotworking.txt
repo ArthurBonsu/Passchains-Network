@@ -96,18 +96,10 @@ async function retryOperation(operation, maxRetries = 3, delay = 2000) {
 }
 
 
-/*************  ✨ Codeium Command ⭐  *************/
-/**
- * Tests the connection to the Tatum API by attempting to retrieve the latest block number.
- * If the connection is successful, it logs the latest block number and returns true.
- * If the connection fails or the response is unexpected, it logs the error and returns false.
- * @returns {boolean} Whether the connection test was successful.
- */
-/******  e6bc659a-a656-4e1f-bbfd-73c915da8c5f  *******/
 async function testTatumConnection() {
   try {
     const response = await axios.post(
-      `https://${CHAIN}.gateway.tatum.io`,
+      `https://x-api-key:${NEXT_PUBLIC_TATUM_API_KEY}@${CHAIN}.gateway.tatum.io`,
       {
         jsonrpc: '2.0',
         method: 'eth_blockNumber',
@@ -116,7 +108,6 @@ async function testTatumConnection() {
       },
       {
         headers: {
-          'x-api-key': NEXT_PUBLIC_TATUM_API_KEY,
           'Content-Type': 'application/json'
         }
       }
@@ -130,14 +121,11 @@ async function testTatumConnection() {
       return false;
     }
   } catch (error) {
-    console.error('Tatum connection test failed:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
-    });
+    console.error('Tatum connection test failed:', error.message);
     return false;
   }
 }
+
 async function getWeb3Provider(preferredProvider = null) {
   if (!PRIVATE_KEY) {
     throw new Error('Private key not found in environment variables');
@@ -210,80 +198,98 @@ async function getWeb3Provider(preferredProvider = null) {
   throw new Error('No viable provider found. Please check your network configuration and credentials.');
 }
 // Modified connection test function
+async function testTatumConnection() {
+  try {
+    const headers = {
+      'x-api-key': NEXT_PUBLIC_TATUM_API_KEY,
+      'Content-Type': 'application/json'
+    };
 
+    // Try multiple endpoints
+    const endpoints = [
+      `https://${CHAIN}.gateway.tatum.io`,
+      `https://api-${CHAIN}.tatum.io/v3/blockchain/node`
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`Testing connection to ${endpoint}...`);
+        const response = await axios.post(
+          endpoint,
+          {
+            jsonrpc: '2.0',
+            method: 'eth_blockNumber',
+            params: [],
+            id: 1
+          },
+          { headers }
+        );
+
+        if (response.data && response.data.result) {
+          console.log('Tatum connection successful. Latest block:', 
+            parseInt(response.data.result, 16));
+          return true;
+        }
+      } catch (endpointError) {
+        console.log(`Failed to connect to ${endpoint}:`, endpointError.message);
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('All Tatum connection attempts failed:', error.message);
+    return false;
+  }
+}
 
 // Also, let's add a debug mode to the deployContract function:
 async function deployContract(contractName, abi, bytecode) {
-  const providers = ['Infura', 'Tatum']; // List of providers to try
-  let lastError;
-
-  for (const providerName of providers) {
-    console.log(`Attempting to deploy ${contractName} using ${providerName}...`);
-
+  return retryOperation(async () => {
+    const { web3, provider, address, providerName } = await getWeb3Provider(providerName);
+    
     try {
-      return await retryOperation(async () => {
-        const { web3, provider, address } = await getWeb3Provider(providerName);
-        
-        try {
-          // Create account from private key for signing
-          const account = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY);
-          web3.eth.accounts.wallet.add(account);
-          web3.eth.defaultAccount = account.address;
-
-          const contract = new web3.eth.Contract(abi);
-          
-          console.log(`Estimating gas for ${contractName}...`);
-          const gasEstimate = await contract.deploy({ data: bytecode })
-            .estimateGas({ from: address });
-          
-          const gasPrice = await web3.eth.getGasPrice();
-          const totalCost = web3.utils.fromWei(
-            (BigInt(gasEstimate) * BigInt(gasPrice)).toString(),
-            'ether'
-          );
-          
-          console.log(`Estimated deployment cost for ${contractName}: ${totalCost} ETH`);
-          console.log(`Deploying ${contractName}...`);
-          
-          const deployedContract = await contract
-            .deploy({ data: bytecode })
-            .send({ 
-              from: address,
-              gas: Math.floor(gasEstimate * 1.2),
-              gasPrice: gasPrice
-            });
-          
-          console.log(`${contractName} deployed to:`, deployedContract.options.address);
-          
-          return {
-            address: deployedContract.options.address,
-            transactionHash: deployedContract.transactionHash
-          };
-        } catch (deployError) {
-          console.error(`Detailed deployment error for ${contractName}:`, {
-            message: deployError.message,
-            stack: deployError.stack,
-            name: deployError.name
-          });
-          throw deployError;
-        } finally {
-          if (provider && provider.engine) {
-            await new Promise((resolve) => {
-              provider.engine.stop();
-              resolve();
-            });
-          }
-        }
-      }, 3, 5000);
+      const contract = new web3.eth.Contract(abi);
+      
+      console.log(`Estimating gas for ${contractName}...`);
+      const gasEstimate = await contract.deploy({ data: bytecode })
+        .estimateGas({ from: address });
+      
+      const gasPrice = await web3.eth.getGasPrice();
+      const totalCost = web3.utils.fromWei(
+        (BigInt(gasEstimate) * BigInt(gasPrice)).toString(),
+        'ether'
+      );
+      
+      console.log(`Estimated deployment cost for ${contractName}: ${totalCost} ETH`);
+      
+      console.log(`Deploying ${contractName}...`);
+      const deployedContract = await contract
+        .deploy({ data: bytecode })
+        .send({ 
+          from: address,
+          gas: Math.floor(gasEstimate * 1.2)
+        });
+      
+      console.log(`${contractName} deployed to:`, deployedContract.options.address);
+      
+      return {
+        address: deployedContract.options.address,
+        transactionHash: deployedContract.transactionHash
+      };
     } catch (error) {
-      console.error(`Deployment error for ${contractName} using ${providerName}:`, error);
-      lastError = error;
+      console.error(`Deployment error for ${contractName}:`, error);
+      throw error;
+    } finally {
+      if (provider && provider.engine) {
+        await new Promise((resolve) => {
+          provider.engine.stop();
+          resolve();
+        });
+      }
     }
-  }
-
-  // If we've exhausted all providers, throw the last error
-  throw lastError || new Error(`Failed to deploy ${contractName} with all providers`);
+  }, 3, 5000);
 }
+
 
 async function verifyContract(contractAddress, contractName, contractSource, compilerVersion = 'v0.8.19') {
   if (!ETHERSCAN_API_KEY) {
