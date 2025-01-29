@@ -11,8 +11,9 @@ const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const INFURA_URL = process.env.ETHEREUM_PROVIDER_URL;
 const CHAIN_ID = 11155111; // Sepolia chain ID
+const CHAIN = 'ethereum-sepolia'; // This corresponds to the {CHAIN} part in the URL
 
-
+// Providers configuration
 const providers = [
   {
     url: INFURA_URL,
@@ -23,7 +24,7 @@ const providers = [
     timeout: 30000
   },
   {
-    url: `https://x-api-key:${NEXT_PUBLIC_TATUM_API_KEY}@${CHAIN_ID}.gateway.tatum.io`,
+    url: `https://x-api-key:${NEXT_PUBLIC_TATUM_API_KEY}@${CHAIN}.gateway.tatum.io`,
     name: 'Tatum',
     chainId: CHAIN_ID,
     minBalance: '0.1',
@@ -36,7 +37,7 @@ const providers = [
 async function testTatumConnection() {
   try {
     const response = await axios.post(
-      `https://x-api-key:${NEXT_PUBLIC_TATUM_API_KEY}@${CHAIN_ID}.gateway.tatum.io`,
+      `https://x-api-key:${NEXT_PUBLIC_TATUM_API_KEY}@${CHAIN}.gateway.tatum.io`,
       {
         jsonrpc: '2.0',
         method: 'eth_blockNumber',
@@ -80,21 +81,19 @@ async function getWeb3Provider() {
           console.log('Skipping Tatum due to failed connection test');
           continue;
         }
-        console.log('Tatum connection test passed, creating Web3 provider');
       }
-
       web3Provider = new Web3.providers.HttpProvider(provider.url);
+
       const web3 = new Web3(web3Provider);
       
-      console.log(`Adding account using private key for ${provider.name}`);
+      // Add the account using the private key
       const account = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY);
       web3.eth.accounts.wallet.add(account);
       web3.eth.defaultAccount = account.address;
 
-      console.log(`Testing provider connectivity for ${provider.name}`);
+      // Test provider connectivity
       await web3.eth.getBlockNumber();
 
-      console.log(`Getting balance for ${provider.name}`);
       const balance = await web3.eth.getBalance(account.address);
       const balanceInEth = web3.utils.fromWei(balance, 'ether');
       
@@ -107,9 +106,6 @@ async function getWeb3Provider() {
       console.log(`Insufficient balance on ${provider.name}. Trying next provider...`);
     } catch (error) {
       console.error(`Failed to connect to ${provider.name}:`, error.message);
-      if (error.stack) {
-        console.error(`Stack trace:`, error.stack);
-      }
     }
   }
 
