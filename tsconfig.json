@@ -25,7 +25,7 @@
     "**/*.ts", 
     "**/*.tsx", 
     ".next/types/**/*.ts"
-  ],
+, "scripts/deploy_ethereumjs"  ],
   "exclude": [
     "node_modules",
     "build",

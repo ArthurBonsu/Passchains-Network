@@ -1,14 +1,9 @@
-const path = require('path');
-require('dotenv').config({ 
-  path: path.resolve(__dirname, '../.env.local') 
-});
+require('dotenv').config({ path: '.env.local' });
 const Web3 = require('web3');
 const axios = require('axios');
 const fs = require('fs');
-
+const path = require('path');
 const glob = require('glob');
-const web3 = new Web3();
-
 
 // Environment variables
 const NEXT_PUBLIC_TATUM_API_KEY = process.env.NEXT_PUBLIC_TATUM_API_KEY;
@@ -17,9 +12,8 @@ const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const INFURA_URL = process.env.ETHEREUM_PROVIDER_URL;
 const CHAIN_ID = 11155111; // Sepolia chain ID
 const CHAIN = 'ethereum-sepolia'; // This corresponds to the {CHAIN} part in the URL
-const TATUM_ADDRESS = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
 
-// Modified provider configuration
+// Providers configuration
 const providers = [
   {
     url: INFURA_URL,
@@ -27,98 +21,33 @@ const providers = [
     chainId: CHAIN_ID,
     minBalance: '0.1',
     retryAttempts: 3,
-    timeout: 30000
+    timeout: 30000,
   },
   {
-    url: `https://${CHAIN}.gateway.tatum.io`,
+    url: `https://x-api-key:${NEXT_PUBLIC_TATUM_API_KEY}@${CHAIN}.gateway.tatum.io`,
     name: 'Tatum',
     chainId: CHAIN_ID,
     minBalance: '0.1',
     retryAttempts: 3,
     timeout: 30000,
-    apiKey: NEXT_PUBLIC_TATUM_API_KEY
-  }
+  },
 ];
 
-
-function getWalletAddress() {
-  const PRIVATE_KEY = process.env.PRIVATE_KEY;
-  
-  if (!PRIVATE_KEY) {
-      console.error('PRIVATE_KEY not found in .env.local file');
-      process.exit(1);
-  }
-
-  try {
-      const web3 = new Web3();
-      const account = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY);
-      console.log('\nWallet Address:', account.address);
-      
-      // Create a string to append to .env.local
-      const envEntry = `\nWALLET_ADDRESS=${account.address}`;
-      
-      console.log('\nAdd this line to your .env.local file:');
-      console.log(envEntry);
-      
-  } catch (error) {
-      console.error('Error deriving wallet address:', error.message);
-  }
-}
-
-getWalletAddress();
-
-// Add this debugging log
-console.log('Environment variables loaded:', {
-  WALLET_ADDRESS: process.env.WALLET_ADDRESS,
-  TATUM_ADDRESS: TATUM_ADDRESS
-
-  
-});
-async function retryOperation(operation, maxRetries = 3, delay = 2000) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      console.log(`\nAttempt ${attempt} of ${maxRetries}`);
-      const result = await operation();
-      return result;
-    } catch (error) {
-      console.error(`\nAttempt ${attempt} failed with error:`, error.message);
-      
-      if (attempt === maxRetries) {
-        console.error(`\nAll ${maxRetries} attempts failed. Last error:`, error);
-        throw error;
-      } else {
-        const nextDelay = delay * attempt; // Exponential backoff
-        console.log(`\nWaiting ${nextDelay/1000} seconds before attempt ${attempt + 1}...`);
-        await new Promise(resolve => setTimeout(resolve, nextDelay));
-      }
-    }
-  }
-}
-
-
-/*************  ✨ Codeium Command ⭐  *************/
-/**
- * Tests the connection to the Tatum API by attempting to retrieve the latest block number.
- * If the connection is successful, it logs the latest block number and returns true.
- * If the connection fails or the response is unexpected, it logs the error and returns false.
- * @returns {boolean} Whether the connection test was successful.
- */
-/******  e6bc659a-a656-4e1f-bbfd-73c915da8c5f  *******/
+// Test Tatum connection
 async function testTatumConnection() {
   try {
     const response = await axios.post(
-      `https://${CHAIN}.gateway.tatum.io`,
+      `https://x-api-key:${NEXT_PUBLIC_TATUM_API_KEY}@${CHAIN}.gateway.tatum.io`,
       {
         jsonrpc: '2.0',
         method: 'eth_blockNumber',
         params: [],
-        id: 1
+        id: 1,
       },
       {
         headers: {
-          'x-api-key': NEXT_PUBLIC_TATUM_API_KEY,
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
       }
     );
 
@@ -130,166 +59,84 @@ async function testTatumConnection() {
       return false;
     }
   } catch (error) {
-    console.error('Tatum connection test failed:', {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status
-    });
+    console.error('Tatum connection test failed:', error.message);
     return false;
   }
 }
-async function getWeb3Provider(preferredProvider = null) {
+
+// Get Web3 Provider
+async function getWeb3Provider() {
   if (!PRIVATE_KEY) {
     throw new Error('Private key not found in environment variables');
   }
 
-  console.log('Starting provider selection...');
-  console.log('Preferred provider:', preferredProvider);
-
   for (const provider of providers) {
-    // Skip providers that don't match the preferred provider if specified
-    if (preferredProvider && provider.name !== preferredProvider) {
-      console.log(`Skipping ${provider.name} as it doesn't match preferred provider`);
-      continue;
-    }
-
     try {
       console.log(`Attempting to connect to ${provider.name} with URL: ${provider.url}`);
 
-      // Create Web3 provider
-      const web3Provider = new Web3.providers.HttpProvider(provider.url, {
-        timeout: provider.timeout,
-      });
+      let web3Provider;
 
-      // Create Web3 instance
-      const web3 = new Web3(web3Provider);
-
-      // Validate provider connection
-      const chainId = await web3.eth.getChainId();
-      console.log(`Connected to ${provider.name}. Chain ID: ${chainId}`);
-
-      // Validate chain ID
-      if (chainId !== provider.chainId) {
-        console.warn(`Chain ID mismatch. Expected ${provider.chainId}, got ${chainId}`);
-        continue;
-      }
-
-      // Select appropriate address
-      const address = provider.name === 'Tatum' ? TATUM_ADDRESS : process.env.WALLET_ADDRESS;
-      
-      if (!address) {
-        console.warn(`No address found for ${provider.name}`);
-        continue;
-      }
-
-      // Additional provider-specific connection test
       if (provider.name === 'Tatum') {
         const tatumConnected = await testTatumConnection();
+
         if (!tatumConnected) {
-          console.log('Tatum connection test failed');
+          console.log('Skipping Tatum due to failed connection test');
           continue;
         }
       }
 
-      // Return successful provider configuration
-      return {
-        web3,
-        provider: web3Provider,
-        address,
-        providerName: provider.name
-      };
+      web3Provider = new Web3.providers.HttpProvider(provider.url);
 
+      const web3 = new Web3(web3Provider);
+
+      // Add the account using the private key
+      const account = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY);
+      web3.eth.accounts.wallet.add(account);
+      web3.eth.defaultAccount = account.address;
+
+      // Test provider connectivity
+      await web3.eth.getBlockNumber();
+
+      const balance = await web3.eth.getBalance(account.address);
+      const balanceInEth = web3.utils.fromWei(balance, 'ether');
+
+      console.log(`Connected to ${provider.name}. Account balance: ${balanceInEth} ETH`);
+
+      if (parseFloat(balanceInEth) >= parseFloat(provider.minBalance)) {
+        return { web3, provider: web3Provider };
+      }
+
+      console.log(`Insufficient balance on ${provider.name}. Trying next provider...`);
     } catch (error) {
       console.error(`Failed to connect to ${provider.name}:`, error.message);
-      // Log full stack trace for debugging
-      console.error(error.stack);
     }
   }
 
-  // If no viable provider is found
-  throw new Error('No viable provider found. Please check your network configuration and credentials.');
+  throw new Error('No viable provider found');
 }
-// Modified connection test function
 
-
-// Also, let's add a debug mode to the deployContract function:
-async function deployContract(contractName, abi, bytecode) {
-  const providers = ['Infura', 'Tatum']; // List of providers to try
+async function retryOperation(operation, maxRetries = 3, delay = 2000) {
   let lastError;
-
-  for (const providerName of providers) {
-    console.log(`Attempting to deploy ${contractName} using ${providerName}...`);
-
+  for (let i = 0; i < maxRetries; i++) {
     try {
-      return await retryOperation(async () => {
-        const { web3, provider, address } = await getWeb3Provider(providerName);
-        
-        try {
-          // Create account from private key for signing
-          const account = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY);
-          web3.eth.accounts.wallet.add(account);
-          web3.eth.defaultAccount = account.address;
-
-          const contract = new web3.eth.Contract(abi);
-          
-          console.log(`Estimating gas for ${contractName}...`);
-          const gasEstimate = await contract.deploy({ data: bytecode })
-            .estimateGas({ from: address });
-          
-          const gasPrice = await web3.eth.getGasPrice();
-          const totalCost = web3.utils.fromWei(
-            (BigInt(gasEstimate) * BigInt(gasPrice)).toString(),
-            'ether'
-          );
-          
-          console.log(`Estimated deployment cost for ${contractName}: ${totalCost} ETH`);
-          console.log(`Deploying ${contractName}...`);
-          
-          const deployedContract = await contract
-            .deploy({ data: bytecode })
-            .send({ 
-              from: address,
-              gas: Math.floor(gasEstimate * 1.2),
-              gasPrice: gasPrice
-            });
-          
-          console.log(`${contractName} deployed to:`, deployedContract.options.address);
-          
-          return {
-            address: deployedContract.options.address,
-            transactionHash: deployedContract.transactionHash
-          };
-        } catch (deployError) {
-          console.error(`Detailed deployment error for ${contractName}:`, {
-            message: deployError.message,
-            stack: deployError.stack,
-            name: deployError.name
-          });
-          throw deployError;
-        } finally {
-          if (provider && provider.engine) {
-            await new Promise((resolve) => {
-              provider.engine.stop();
-              resolve();
-            });
-          }
-        }
-      }, 3, 5000);
+      return await operation();
     } catch (error) {
-      console.error(`Deployment error for ${contractName} using ${providerName}:`, error);
       lastError = error;
+      console.log(`Attempt ${i + 1} failed: ${error.message}`);
+      if (i === maxRetries - 1) {
+        console.error(`All ${maxRetries} attempts failed. Last error:`, error);
+        throw error;
+      }
+      console.log(`Retrying in ${delay / 1000} seconds...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-
-  // If we've exhausted all providers, throw the last error
-  throw lastError || new Error(`Failed to deploy ${contractName} with all providers`);
 }
 
 async function verifyContract(contractAddress, contractName, contractSource, compilerVersion = 'v0.8.19') {
   if (!ETHERSCAN_API_KEY) {
     throw new Error('ETHERSCAN_API_KEY not found in environment variables');
   }
-
   try {
     const response = await axios.post('https://api-sepolia.etherscan.io/api', null, {
       params: {
@@ -301,14 +148,12 @@ async function verifyContract(contractAddress, contractName, contractSource, com
         codeformat: 'solidity-single-file',
         contractname: contractName,
         compilerversion: compilerVersion,
-        optimizationUsed: 1
-      }
+        optimizationUsed: 1,
+      },
     });
-
     if (response.data.status !== '1') {
       throw new Error(`Contract verification failed: ${response.data.result}`);
     }
-
     return response.data;
   } catch (error) {
     console.error(`Verification error for ${contractName}:`, error);
@@ -317,75 +162,43 @@ async function verifyContract(contractAddress, contractName, contractSource, com
 }
 
 async function deployContract(contractName, abi, bytecode) {
-  const providers = ['Infura', 'Tatum']; // List of providers to try
-  let lastError;
-
-  for (const providerName of providers) {
-    console.log(`Attempting to deploy ${contractName} using ${providerName}...`);
-
+  return retryOperation(async () => {
+    const { web3, provider } = await getWeb3Provider();
+    const accounts = await web3.eth.getAccounts();
     try {
-      return await retryOperation(async () => {
-        const { web3, provider, address } = await getWeb3Provider(providerName);
-        
-        try {
-          const contract = new web3.eth.Contract(abi);
-          console.log(`Estimating gas for ${contractName}...`);
-          const gasEstimate = await contract.deploy({ data: bytecode })
-            .estimateGas({ from: address });
-          
-          const gasPrice = await web3.eth.getGasPrice();
-          const totalCost = web3.utils.fromWei(
-            (BigInt(gasEstimate) * BigInt(gasPrice)).toString(),
-            'ether'
-          );
-          
-          console.log(`Estimated deployment cost for ${contractName}: ${totalCost} ETH`);
-          console.log(`Deploying ${contractName}...`);
-          
-          const deployedContract = await contract
-            .deploy({ data: bytecode })
-            .send({ 
-              from: address,
-              gas: Math.floor(gasEstimate * 1.2)
-            });
-          
-          console.log(`${contractName} deployed to:`, deployedContract.options.address);
-          
-          return {
-            address: deployedContract.options.address,
-            transactionHash: deployedContract.transactionHash
-          };
-        } finally {
-          if (provider && provider.engine) {
-            await new Promise((resolve) => {
-              provider.engine.stop();
-              resolve();
-            });
-          }
-        }
-      }, 3, 5000);
+      const contract = new web3.eth.Contract(abi);
+      console.log(`Estimating gas for ${contractName}...`);
+      const gasEstimate = await contract.deploy({ data: bytecode }).estimateGas({ from: accounts[0] });
+      const gasPrice = await web3.eth.getGasPrice();
+      const totalCost = web3.utils.fromWei((BigInt(gasEstimate) * BigInt(gasPrice)).toString(), 'ether');
+      console.log(`Estimated deployment cost for ${contractName}: ${totalCost} ETH`);
+      console.log(`Deploying ${contractName}...`);
+      const deployedContract = await contract.deploy({ data: bytecode }).send({ from: accounts[0], gas: Math.floor(gasEstimate * 1.2) });
+      console.log(`${contractName} deployed to:`, deployedContract.options.address);
+      return { address: deployedContract.options.address, transactionHash: deployedContract.transactionHash };
     } catch (error) {
-      console.error(`Deployment error for ${contractName} using ${providerName}:`, error);
-      lastError = error;
+      console.error(`Deployment error for ${contractName}:`, error);
+      throw error;
+    } finally {
+      if (provider && provider.engine) {
+        await new Promise((resolve) => {
+          provider.engine.stop();
+          resolve();
+        });
+      }
     }
-  }
-
-  // If we've exhausted all providers, throw the last error
-  throw lastError || new Error(`Failed to deploy ${contractName} with all providers`);
+  }, 3, 5000);
 }
 
 async function deployAllContracts() {
   console.log('Starting contract deployment...');
-  
   const contractsDir = path.join(__dirname, '../contracts');
   const buildContractsDir = path.join(__dirname, '../build/contracts');
   const addressesPath = path.join(__dirname, '../config/contract_addresses.json');
-  
   // Ensure directories exist
   if (!fs.existsSync(buildContractsDir)) {
     throw new Error('Build directory not found. Please compile contracts first.');
   }
-  
   // Read or create addresses file
   let existingAddresses = {};
   try {
@@ -393,49 +206,29 @@ async function deployAllContracts() {
   } catch (error) {
     console.log('No existing addresses file found. Creating new one.');
   }
-  
   const deployedContracts = {};
-  
-  const contractFiles = fs.readdirSync(buildContractsDir)
-    .filter(f => f.endsWith('.json') && !f.includes('Metadata'));
-  
+  const contractFiles = fs.readdirSync(buildContractsDir).filter((f) => f.endsWith('.json') && !f.includes('Metadata'));
   for (const file of contractFiles) {
     const contractName = path.basename(file, '.json');
     console.log(`Processing ${contractName}...`);
-    
     try {
       const contractPath = path.join(buildContractsDir, file);
       const contractData = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
-      
       const existingAddress = existingAddresses[contractName]?.address;
-      
-      const deploymentResult = await deployContract(
-        contractName, 
-        contractData.abi, 
-        contractData.bytecode
-      );
-      
+      const deploymentResult = await deployContract(contractName, contractData.abi, contractData.bytecode);
       const sourceCodePath = path.join(contractsDir, `**/${contractName}.sol`);
       const sourceCodes = glob.sync(sourceCodePath);
-      
       if (sourceCodes.length > 0) {
         const sourceCode = fs.readFileSync(sourceCodes[0], 'utf8');
         console.log(`Verifying ${contractName}...`);
-        
-        const verificationResult = await verifyContract(
-          deploymentResult.address,
-          contractName,
-          sourceCode
-        );
-        
+        const verificationResult = await verifyContract(deploymentResult.address, contractName, sourceCode);
         deployedContracts[contractName] = {
           address: deploymentResult.address,
           abi: `${contractName}.json`,
           transactionHash: deploymentResult.transactionHash,
           verificationStatus: verificationResult,
-          previousAddress: existingAddress
+          previousAddress: existingAddress,
         };
-        
         console.log(`${contractName} deployed and verified successfully`);
       }
     } catch (error) {
@@ -443,93 +236,76 @@ async function deployAllContracts() {
       // Continue with other contracts even if one fails
     }
   }
-  
   const updatedAddresses = {
     ...existingAddresses,
     ...Object.fromEntries(
       Object.entries(deployedContracts).map(([name, contract]) => [
         name,
-        {
-          address: contract.address,
-          abi: contract.abi,
-          previousAddress: contract.previousAddress
-        }
-      ])
-    )
-  };
-  
-  // Ensure config directory exists
-  const configDir = path.dirname(addressesPath);
-  if (!fs.existsSync(configDir)) {
-    fs.mkdirSync(configDir, { recursive: true });
+        { address: contract.address, abi: contract.abi, previousAddress: contract.previousAddress },     ]),
+      ),
+    };
+    // Ensure config directory exists
+    const configDir = path.dirname(addressesPath);
+    if (!fs.existsSync(configDir)) {
+      fs.mkdirSync(configDir, { recursive: true });
+    }
+    fs.writeFileSync(addressesPath, JSON.stringify(updatedAddresses, null, 2));
+    console.log('Contracts deployed and addresses updated:', deployedContracts);
+    return deployedContracts;
   }
   
-  fs.writeFileSync(addressesPath, JSON.stringify(updatedAddresses, null, 2));
-  
-  console.log('Contracts deployed and addresses updated:', deployedContracts);
-  return deployedContracts;
-}
-
-// Main execution
-if (require.main === module) {
-  // Process-level unhandled rejection handler
-  process.on('unhandledRejection', (error) => {
-    console.error('Unhandled promise rejection:', error);
-    process.exit(1);
-  });
-
-  // Validate required environment variables
-  const requiredEnvVars = {
-    'NEXT_PUBLIC_TATUM_API_KEY': NEXT_PUBLIC_TATUM_API_KEY,
-    'PRIVATE_KEY': PRIVATE_KEY,
-    'ETHERSCAN_API_KEY': ETHERSCAN_API_KEY
-  };
-
-  const missingEnvVars = Object.entries(requiredEnvVars)
-    .filter(([_, value]) => !value)
-    .map(([key]) => key);
-
-  if (missingEnvVars.length > 0) {
-    console.error('Missing required environment variables:', missingEnvVars.join(', '));
-    process.exit(1);
-  }
-
-  // Add timeout for the entire deployment process
-  const deploymentTimeout = setTimeout(() => {
-    console.error('Deployment timed out after 5 minutes');
-    process.exit(1);
-  }, 300000); // 5 minutes
-
-  testTatumConnection()
-    .then(result => {
-      if (result) {
-        console.log('Tatum connection test passed. Proceeding with deployment...');
-        return deployAllContracts();
-      } else {
-        console.log('Tatum connection test failed. Please check your configuration.');
-        process.exit(1);
-      }
-    })
-    .then(() => {
-      clearTimeout(deploymentTimeout);
-      console.log('Deployment completed successfully');
-      process.exit(0);
-    })
-    .catch(error => {
-      clearTimeout(deploymentTimeout);
-      console.error('Deployment failed:', {
-        message: error.message,
-        stack: error.stack,
-        details: error.details || 'No additional details'
-      });
+  // Main execution
+  if (require.main === module) {
+    // Process-level unhandled rejection handler
+    process.on('unhandledRejection', (error) => {
+      console.error('Unhandled promise rejection:', error);
       process.exit(1);
     });
-}
-
-module.exports = {
-  deployContract,
-  deployAllContracts,
-  verifyContract,
-  getWeb3Provider,
-  testTatumConnection
-};
+  
+    // Validate required environment variables
+    const requiredEnvVars = {
+      'NEXT_PUBLIC_TATUM_API_KEY': NEXT_PUBLIC_TATUM_API_KEY,
+      'PRIVATE_KEY': PRIVATE_KEY,
+      'ETHERSCAN_API_KEY': ETHERSCAN_API_KEY,
+    };
+    const missingEnvVars = Object.entries(requiredEnvVars).filter(([_, value]) => !value).map(([key]) => key);
+    if (missingEnvVars.length > 0) {
+      console.error('Missing required environment variables:', missingEnvVars.join(', '));
+      process.exit(1);
+    }
+  
+    // Add timeout for the entire deployment process
+    const deploymentTimeout = setTimeout(() => {
+      console.error('Deployment timed out after 5 minutes');
+      process.exit(1);
+    }, 300000); // 5 minutes
+  
+    testTatumConnection()
+      .then((result) => {
+        if (result) {
+          console.log('Tatum connection test passed. Proceeding with deployment...');
+          return deployAllContracts();
+        } else {
+          console.log('Tatum connection test failed. Please check your configuration.');
+          process.exit(1);
+        }
+      })
+      .then(() => {
+        clearTimeout(deploymentTimeout);
+        console.log('Deployment completed successfully');
+        process.exit(0);
+      })
+      .catch((error) => {
+        clearTimeout(deploymentTimeout);
+        console.error('Deployment failed:', { message: error.message, stack: error.stack, details: error.details || 'No additional details' });
+        process.exit(1);
+      });
+  }
+  
+  module.exports = {
+    deployContract,
+    deployAllContracts,
+    verifyContract,
+    getWeb3Provider,
+    testTatumConnection,
+  };
