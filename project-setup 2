@@ -64,6 +64,9 @@
 ├── constants/
 │   └── constants.js
 ├── contracts/
+│   ├── RequestManager.sol
+│   ├── ResponseManager.sol
+│   └── UncertaintyAnalytics.sol
 │   ├── blockchain/
 │   │   ├── BlockchainRegistryBase.sol
 │   │   └── ChaCha20Poly1305.sol
@@ -76,6 +79,7 @@
 │   │   └── ZKPVerifierBase.sol
 │   └── relay/
 │       └── RelayChain.sol
+
 ├── library/
 │   ├── FixedPointMath.sol
 │   └── TransactionTypes.sol
@@ -87,6 +91,12 @@
 │   ├── 5_initial_migration.js
 │   ├── 6_initial_migration.js
 │   └── 7_initial_migration.js
+        8_initial_migration.js
+        9_initial_migration.js
+        10_initial_migration.js
+│── interfaces/
+│       IUncertaintyAnalytics.sol
+│      
 ├───pages
 │   │   index.tsx
 │   │   _app.tsx
@@ -106,19 +116,24 @@
 ├───services
 │       blockchain-service.ts
 │       contract-interactions.ts
+│       cross-chain-service.ts
+│       tatum-blockchain-service.ts
 │       transaction-processor.ts
-        tatum-blockchain-service.ts
 │
 ├───test
 │       blockchain_registry_test.js
 │       passchain_flow_test.js
 │       relay_chain_test.js
+│       uncertainty_analytics_test.js
 │
 └───utils
         contract-loader.ts
         logger.ts
         performance-tracker.ts
         web3-config.ts
+
+
+
 .eslintrc.json
 deployment-script.js
 global.d.ts

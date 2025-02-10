@@ -2,165 +2,196 @@ const UncertaintyAnalytics = artifacts.require("UncertaintyAnalytics");
 const RequestManager = artifacts.require("RequestManager");
 const ResponseManager = artifacts.require("ResponseManager");
 
-contract("UncertaintyAnalytics", accounts => {
+contract("UncertaintyAnalytics", function(accounts) {
   let analytics;
   let requestManager;
   let responseManager;
-  let startTime;
   const [owner, requester, responder] = accounts;
 
-  const measureTime = async (fn) => {
+  const measureTime = (fn) => {
+    console.log(">>> Measuring time for function");
     const start = Date.now();
-    const result = await fn();
-    const end = Date.now();
-    return { result, duration: end - start };
-  };
-
-  const getGasCost = async (tx) => {
-    const receipt = await web3.eth.getTransactionReceipt(tx.tx);
-    return web3.utils.toBN(receipt.gasUsed).mul(web3.utils.toBN(tx.receipt.effectiveGasPrice));
-  };
-
-  const getDeploymentCost = async (contract) => {
-    const receipt = await web3.eth.getTransactionReceipt(contract.transactionHash);
-    return web3.utils.fromWei(
-      web3.utils.toBN(receipt.gasUsed).mul(web3.utils.toBN(receipt.effectiveGasPrice))
-    );
-  };
-
-  const advanceTime = async (seconds) => {
-    await web3.currentProvider.send({
-      jsonrpc: "2.0",
-      method: "evm_increaseTime",
-      params: [seconds],
-      id: Date.now(),
-    });
-    await web3.currentProvider.send({
-      jsonrpc: "2.0",
-      method: "evm_mine",
-      params: [],
-      id: Date.now()
+    return fn().then(result => {
+      const end = Date.now();
+      console.log(`>>> Time measurement: ${end - start} ms`);
+      return { result, duration: end - start };
     });
   };
 
-  beforeEach(async () => {
-    analytics = await UncertaintyAnalytics.new();
-    console.log("Analytics Deployment Cost:", await getDeploymentCost(analytics), "ETH");
-    
-    requestManager = await RequestManager.new(analytics.address);
-    console.log("RequestManager Deployment Cost:", await getDeploymentCost(requestManager), "ETH");
-    
-    responseManager = await ResponseManager.new(analytics.address);
-    console.log("ResponseManager Deployment Cost:", await getDeploymentCost(responseManager), "ETH");
-    
-    startTime = Date.now();
+  const getGasCost = (tx) => {
+    console.log(">>> Calculating Gas Cost");
+    return web3.eth.getTransactionReceipt(tx.tx)
+      .then(receipt => {
+        console.log("Transaction Receipt:", receipt);
+        const gasCost = web3.utils.toBN(receipt.gasUsed).mul(web3.utils.toBN(tx.receipt.effectiveGasPrice));
+        console.log("Gas Cost:", gasCost.toString());
+        return gasCost;
+      });
+  };
+
+  const advanceTime = () => {
+    console.log(`>>> Advancing time by 86401 seconds`);
+    return new Promise((resolve, reject) => {
+      web3.currentProvider.send({
+        jsonrpc: "2.0",
+        method: "evm_increaseTime",
+        params: [86401],
+        id: new Date().getTime(),
+      }, (err1) => {
+        if (err1) return reject(err1);
+        web3.currentProvider.send({
+          jsonrpc: "2.0",
+          method: "evm_mine",
+          params: [],
+          id: new Date().getTime()
+        }, (err2) => {
+          if (err2) return reject(err2);
+          console.log(">>> Time advanced successfully");
+          resolve();
+        });
+      });
+    });
+  };
+
+  beforeEach(function(done) {
+    this.timeout(0);
+    UncertaintyAnalytics.new()
+      .then(analyticsContract => {
+        analytics = analyticsContract;
+        return Promise.all([
+          RequestManager.new(analytics.address),
+          ResponseManager.new(analytics.address)
+        ]);
+      })
+      .then(([requestManagerContract, responseManagerContract]) => {
+        requestManager = requestManagerContract;
+        responseManager = responseManagerContract;
+        done();
+      })
+      .catch(done);
   });
 
-  describe("Request-Response Flow Analysis", () => {
-    it("Should analyze full request-response cycle with metrics", async () => {
-      const metrics = {
-        confirmationTimes: [],
-        executionTimes: [],
-        gasCosts: [],
-        failedTransactions: 0,
-        invalidAddressAttempts: 0,
-        invalidRequirementAttempts: 0
-      };
+  it("Should analyze full request-response cycle with metrics", function(done) {
+    this.timeout(0);
 
-      console.log("\n=== Starting 10 Request-Response Cycles ===");
+    const metrics = {
+      confirmationTimes: [],
+      executionTimes: [],
+      gasCosts: [],
+      failedTransactions: 0,
+      invalidAddressAttempts: 0,
+      invalidRequirementAttempts: 0
+    };
 
-      // Submit 10 requests
-      for(let i = 0; i < 10; i++) {
-        const { duration: confirmTime, result: tx } = await measureTime(async () => {
-          return await requestManager.submitRequest({
+    console.log("\n=== Starting 10 Request-Response Cycles ===");
+
+    // Create a promise chain for request-response cycles
+    const requestCycles = Array(10).fill().reduce((chain, _, i) => {
+      return chain.then(() => 
+        measureTime(() => 
+          requestManager.submitRequest({
             from: requester,
             value: web3.utils.toWei("0.001", "ether")
+          })
+        ).then(({ duration: confirmTime, result: tx }) => {
+          metrics.confirmationTimes.push(confirmTime);
+          return getGasCost(tx).then(gasCost => {
+            metrics.gasCosts.push(gasCost);
+            return measureTime(() => 
+              responseManager.submitResponse(i + 1, { from: responder })
+            ).then(({ duration: execTime }) => {
+              metrics.executionTimes.push(execTime);
+              
+              if (i % 3 === 0) {
+                return Promise.all([
+                  analytics.updateDisruptionLevel(i + 1, { from: owner }),
+                  analytics.updateEscalationLevel(Math.floor(i / 2), { from: owner })
+                ]);
+              }
+            });
           });
-        });
-        
-        metrics.confirmationTimes.push(confirmTime);
-        metrics.gasCosts.push(await getGasCost(tx));
+        })
+      );
+    }, Promise.resolve());
 
-        const { duration: execTime } = await measureTime(async () => {
-          return await responseManager.submitResponse(i + 1, { from: responder });
-        });
+    // Chain invalid scenarios and final metrics evaluation
+    requestCycles
+      .then(() => {
+        console.log("\n=== Testing Invalid Scenarios ===");
         
-        metrics.executionTimes.push(execTime);
-        
-        if (i % 3 === 0) {
-          await analytics.updateDisruptionLevel(i + 1, { from: owner });
-          await analytics.updateEscalationLevel(Math.floor(i / 2), { from: owner });
-        }
-      }
-
-      // Test invalid scenarios
-      console.log("\n=== Testing Invalid Scenarios ===");
-      
-      try {
-        await requestManager.submitRequest({ 
+        return requestManager.submitRequest({ 
           from: "0x0000000000000000000000000000000000000000",
           value: web3.utils.toWei("0.001", "ether")
+        }).catch(() => {
+          metrics.invalidAddressAttempts++;
         });
-      } catch {
-        metrics.invalidAddressAttempts++;
-      }
-
-      try {
-        await requestManager.submitRequest({
+      })
+      .then(() => {
+        return requestManager.submitRequest({
           from: requester,
           value: web3.utils.toWei("0.0001", "ether")
+        }).catch(() => {
+          metrics.invalidRequirementAttempts++;
         });
-      } catch {
-        metrics.invalidRequirementAttempts++;
-      }
+      })
+      .then(() => advanceTime())
+      .then(() => analytics.calculateUnavailabilityCost(1))
+      .then(() => Promise.all([
+        analytics.getMetrics(),
+        analytics.unavailabilityCost(),
+        analytics.disruptionLevel(),
+        analytics.escalationLevel()
+      ]))
+      .then(([analyticsMetrics, unavailabilityCost, disruptionLevel, escalationLevel]) => {
+        console.log("\n=== Performance Metrics ===");
+        console.log("Average Confirmation Time:", 
+          metrics.confirmationTimes.reduce((a, b) => a + b, 0) / metrics.confirmationTimes.length, "ms");
+        console.log("Average Execution Time:", 
+          metrics.executionTimes.reduce((a, b) => a + b, 0) / metrics.executionTimes.length, "ms");
+        console.log("Average Gas Cost:", 
+          web3.utils.fromWei(
+            metrics.gasCosts.reduce((a, b) => a.add(b), web3.utils.toBN(0))
+            .div(web3.utils.toBN(metrics.gasCosts.length))
+          ), "ETH");
 
-      await advanceTime(86401); // Advance time by 1 day + 1 second
-      await analytics.calculateUnavailabilityCost(1);
-      
-      const analyticsMetrics = await analytics.getMetrics();
-      const unavailabilityCost = await analytics.unavailabilityCost();
-      const disruptionLevel = await analytics.disruptionLevel();
-      const escalationLevel = await analytics.escalationLevel();
+        console.log("\n=== Uncertainty Metrics ===");
+        console.log("Success Rate:", analyticsMetrics.successRate.toString(), "%");
+        console.log("Average Processing Time:", analyticsMetrics.avgProcessingTime.toString(), "seconds");
+        console.log("Total Transaction Cost:", web3.utils.fromWei(analyticsMetrics.totalCost), "ETH");
+        console.log("Unavailability Cost:", web3.utils.fromWei(unavailabilityCost), "ETH");
+        console.log("Disruption Level:", disruptionLevel.toString());
+        console.log("Escalation Level:", escalationLevel.toString());
 
-      console.log("\n=== Performance Metrics ===");
-      console.log("Average Confirmation Time:", 
-        metrics.confirmationTimes.reduce((a, b) => a + b, 0) / metrics.confirmationTimes.length, "ms");
-      console.log("Average Execution Time:", 
-        metrics.executionTimes.reduce((a, b) => a + b, 0) / metrics.executionTimes.length, "ms");
-      console.log("Average Gas Cost:", 
-        web3.utils.fromWei(
-          metrics.gasCosts.reduce((a, b) => a.add(b), web3.utils.toBN(0))
-          .div(web3.utils.toBN(metrics.gasCosts.length))
-        ), "ETH");
+        console.log("\n=== Error Metrics ===");
+        console.log("Failed Transactions:", metrics.failedTransactions);
+        console.log("Invalid Address Attempts:", metrics.invalidAddressAttempts);
+        console.log("Invalid Requirement Attempts:", metrics.invalidRequirementAttempts);
+        console.log("Total Disruptions:", analyticsMetrics.disruptionCount.toString());
 
-      console.log("\n=== Uncertainty Metrics ===");
-      console.log("Success Rate:", analyticsMetrics.successRate.toString(), "%");
-      console.log("Average Processing Time:", analyticsMetrics.avgProcessingTime.toString(), "seconds");
-      console.log("Total Transaction Cost:", web3.utils.fromWei(analyticsMetrics.totalCost), "ETH");
-      console.log("Unavailability Cost:", web3.utils.fromWei(unavailabilityCost), "ETH");
-      console.log("Disruption Level:", disruptionLevel.toString());
-      console.log("Escalation Level:", escalationLevel.toString());
+        assert.isTrue(analyticsMetrics.successRate.gt(web3.utils.toBN(0)), "Success rate should be positive");
+        assert.isTrue(unavailabilityCost.gt(web3.utils.toBN(0)), "Should have unavailability cost");
+        assert.equal(metrics.invalidAddressAttempts + metrics.invalidRequirementAttempts, 2, "Should have caught invalid scenarios");
+        
+        done();
+      })
+      .catch(done);
+  });
 
-      console.log("\n=== Error Metrics ===");
-      console.log("Failed Transactions:", metrics.failedTransactions);
-      console.log("Invalid Address Attempts:", metrics.invalidAddressAttempts);
-      console.log("Invalid Requirement Attempts:", metrics.invalidRequirementAttempts);
-      console.log("Total Disruptions:", analyticsMetrics.disruptionCount.toString());
+  it("Should track data holding costs accurately", function(done) {
+    this.timeout(0);
 
-      assert.isTrue(analyticsMetrics.successRate.gt(web3.utils.toBN(0)), "Success rate should be positive");
-      assert.isTrue(unavailabilityCost.gt(web3.utils.toBN(0)), "Should have unavailability cost");
-      assert.equal(metrics.invalidAddressAttempts + metrics.invalidRequirementAttempts, 2, "Should have caught invalid scenarios");
-    });
-
-    it("Should track data holding costs accurately", async () => {
-      const holdingCost = web3.utils.toWei("0.0005", "ether");
-      await analytics.updateDataHoldingCost(holdingCost, { from: owner });
-      
-      const dataHoldingCost = await analytics.dataHoldingCost();
-      console.log("\n=== Storage Metrics ===");
-      console.log("Data Holding Cost:", web3.utils.fromWei(dataHoldingCost), "ETH");
-      
-      assert.equal(dataHoldingCost.toString(), holdingCost, "Data holding cost should match");
-    });
+    const holdingCost = web3.utils.toWei("0.0005", "ether");
+    
+    analytics.updateDataHoldingCost(holdingCost, { from: owner })
+      .then(() => analytics.dataHoldingCost())
+      .then((dataHoldingCost) => {
+        console.log("\n=== Storage Metrics ===");
+        console.log("Data Holding Cost:", web3.utils.fromWei(dataHoldingCost), "ETH");
+        
+        assert.equal(dataHoldingCost.toString(), holdingCost, "Data holding cost should match");
+        
+        done();
+      })
+      .catch(done);
   });
 });

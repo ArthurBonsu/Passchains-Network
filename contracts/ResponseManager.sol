@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
-import "../interface/IUncertaintyAnalytics.sol";
-
-
+import "../interfaces/IUncertaintyAnalytics.sol";
 
 contract ResponseManager {
     IUncertaintyAnalytics private immutable analytics;
